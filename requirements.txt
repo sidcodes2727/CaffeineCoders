@@ -1,0 +1,5 @@
+# Serving (everything the service imports). Bounded rather than hard-pinned.
+# Versions actually used: Python 3.9.6, numpy 2.0.2, fastapi 0.128.8, uvicorn 0.39.0
+fastapi>=0.115,<1.0
+uvicorn>=0.32,<1.0
+numpy>=1.24,<3.0
