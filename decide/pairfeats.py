@@ -1,11 +1,32 @@
 """Draft-vs-KB comparison features for the `grounded` decision (pure python)."""
 import re
 
-_W = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
-      "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
-      "fourteen": 14, "fifteen": 15, "twenty": 20, "thirty": 30, "forty": 40,
-      "sixty": 60, "ninety": 90, "hundred": 100, "thousand": 1000}
-_NUM = r"(\d+(?:[.,]\d+)?|%s)" % "|".join(sorted(_W, key=len, reverse=True))
+_UNITS = {w: i for i, w in enumerate(
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen "
+    "sixteen seventeen eighteen nineteen".split())}
+_TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()) if i >= 2}
+_SCALES = {"hundred": 100, "thousand": 1000}
+_NW = "|".join(sorted(list(_UNITS) + list(_TENS) + list(_SCALES), key=len, reverse=True))
+# a run of number words: "three hundred", "sixty-five", "one thousand", "a hundred"
+_NUMRUN = re.compile(r"\b(?:(?:a|an)[\s-]+(?=hundred|thousand))?(?:%s)(?:[\s-]+(?:and[\s-]+)?(?:%s))*\b" % (_NW, _NW))
+_NUM = r"(\d+(?:[.,]\d+)?|an|a)"
+
+
+def _words_to_int(run: str) -> int:
+    total = cur = 0
+    for w in re.split(r"[\s-]+", run):
+        if w in ("a", "an", "and"):
+            continue
+        if w in _UNITS:
+            cur += _UNITS[w]
+        elif w in _TENS:
+            cur += _TENS[w]
+        elif w == "hundred":
+            cur = (cur or 1) * 100
+        elif w == "thousand":
+            total += (cur or 1) * 1000
+            cur = 0
+    return total + cur
 _UNIT = {"minute": 1, "minutes": 1, "hour": 60, "hours": 60, "day": 1440, "days": 1440,
          "week": 10080, "weeks": 10080, "month": 43200, "months": 43200}
 # "a quarter of an hour", "a fortnight"
@@ -20,7 +41,7 @@ _TOK = re.compile(r"dur_\d+|rate_\d+|n\d+|[a-z]+")
 
 def _val(s):
     s = s.replace(",", "")
-    return float(s) if s.replace(".", "").isdigit() else float(_W[s])
+    return 1.0 if s in ("a", "an") else float(s)
 
 
 def canon(text: str) -> str:
@@ -28,6 +49,7 @@ def canon(text: str) -> str:
     for rx, rep in _SPECIAL:
         t = rx.sub(rep, t)
     t = t.replace("first of the next month", "firstnextmonth")
+    t = _NUMRUN.sub(lambda m: str(_words_to_int(m.group(0))), t)
 
     def dur(m):
         n = _val(m.group(1))
@@ -36,10 +58,7 @@ def canon(text: str) -> str:
         return " dur_%d " % minutes
     t = _RATE.sub(lambda m: " rate_%d " % int(_val(m.group(1))), t)
     t = _DUR.sub(dur, t)
-    # bare number words ("five failed attempts", "one thousand requests")
-    t = re.sub(r"\b(?:%s)\b" % "|".join(sorted(_W, key=len, reverse=True)),
-               lambda m: " n%d " % _W[m.group(0)] if m.group(0) not in ("a", "an") else m.group(0), t)
-    t = re.sub(r"\b(\d+)\b", r" n\1 ", t)
+    t = re.sub(r"\b(\d+)\b", r" n\1 ", t)        # bare counts ("five failed attempts" -> n5)
     return t
 
 

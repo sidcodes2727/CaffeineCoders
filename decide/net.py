@@ -28,3 +28,29 @@ def np_forward(sd: dict, ids: np.ndarray, w: np.ndarray, x: np.ndarray):
     a = float(h @ sd["h_approve.weight"].T + sd["h_approve.bias"]) + wide
     g = float(h @ sd["h_grounded.weight"].T + sd["h_grounded.bias"])
     return r, a, g
+
+
+Q_ROUTE, Q_APPROVE, Q_GROUNDED = 0, 1, 2
+
+
+def np_forward_typed(sd: dict, ids: np.ndarray, w: np.ndarray, x: np.ndarray, q: int):
+    """
+    TypedNet inference for ONE question: one forward pass of the trunk conditioned on q.
+    Returns route logits[5] for Q_ROUTE, else a single binary logit.
+    """
+    qv = sd["q.weight"][q]
+    h = (sd["emb.weight"][ids] * w[:, None]).sum(0) + x @ sd["num.weight"].T + sd["num.bias"] + qv
+    h = _gelu(_ln(h, sd["ln0.weight"], sd["ln0.bias"]))
+    for i in range(2):
+        gb = qv @ sd["film.%d.weight" % i].T + sd["film.%d.bias" % i]
+        g, b = gb[:len(qv)], gb[len(qv):]
+        z = _ln(h, sd["lns.%d.weight" % i], sd["lns.%d.bias" % i]) * (1 + g) + b
+        z = _gelu(z @ sd["blocks.%d.0.weight" % i].T + sd["blocks.%d.0.bias" % i])
+        z = z @ sd["blocks.%d.3.weight" % i].T + sd["blocks.%d.3.bias" % i]
+        h = h + z
+    if q == Q_ROUTE:
+        return h @ sd["options"].T + sd["opt_bias"]
+    logit = float(h @ sd["binary.weight"].T + sd["binary.bias"])
+    if q == Q_APPROVE:
+        logit += float((sd["wide.weight"][ids, 0] * sd["wide_mask"][ids, 0] * w).sum())
+    return logit

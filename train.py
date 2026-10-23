@@ -47,9 +47,13 @@ def main():
     ap.add_argument("--final", action="store_true")
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--out", default="artifacts")
+    ap.add_argument("--arch", default="typed", choices=["typed", "shared"])
+    ap.add_argument("--repeats", type=int, default=1, help="repeated k-fold; ensemble = repeats x folds nets")
+    ap.add_argument("--train", default="data/train.jsonl")
+    ap.add_argument("--dev", default="data/dev.jsonl")
     args = ap.parse_args()
     t0 = time.time()
-    tr, dv = load("data/train.jsonl"), load("data/dev.jsonl")
+    tr, dv = load(args.train), load(args.dev)
     fit_rows = tr + dv if args.final else tr
     states = [r["state"] for r in fit_rows]
     vocab = build_vocab(states)
@@ -69,17 +73,20 @@ def main():
     amask = np.array([1.0 if tier_amount(s)[1] < 0.6 * caps[tier_amount(s)[0]] else 0.0 for s in states])
     print("caps(p90 of approved amount per tier):", [round(c, 1) for c in caps], "safe frac %.2f" % amask.mean())
 
-    # ---- 5-fold ensemble; out-of-fold logits drive every calibration step ----------------
-    skf = StratifiedKFold(args.folds, shuffle=True, random_state=0)
+    # ---- k-fold ensemble; out-of-fold logits drive every calibration step ----------------
+    # With repeats > 1 each sample's OOF logit is the mean over `repeats` nets that never
+    # saw it, which is closer to the averaged ensemble that serves.
     oofR, oofA, oofG = np.zeros((len(items), 5)), np.zeros(len(items)), np.zeros(len(items))
     nets = []
-    for k, (a, b) in enumerate(skf.split(np.zeros(len(yr)), yr * 2 + ya)):
-        m = train_net([items[i] for i in a], yr[a], ya[a], yg[a], amask[a], len(vocab), seed=k,
-                      wide_mask=wide_mask, **CFG)
-        r, aa, g = predict(m, [items[i] for i in b])
-        oofR[b], oofA[b], oofG[b] = r, aa, g
-        nets.append(export(m))
-        print("fold", k, "done %.0fs" % (time.time() - t0), flush=True)
+    for rep in range(args.repeats):
+        skf = StratifiedKFold(args.folds, shuffle=True, random_state=rep)
+        for k, (a, b) in enumerate(skf.split(np.zeros(len(yr)), yr * 2 + ya)):
+            m = train_net([items[i] for i in a], yr[a], ya[a], yg[a], amask[a], len(vocab),
+                          seed=rep * 100 + k, wide_mask=wide_mask, arch=args.arch, **CFG)
+            r, aa, g = predict(m, [items[i] for i in b])
+            oofR[b] += r / args.repeats; oofA[b] += aa / args.repeats; oofG[b] += g / args.repeats
+            nets.append(export(m))
+            print("repeat", rep, "fold", k, "done %.0fs" % (time.time() - t0), flush=True)
 
     # ---- calibration -----------------------------------------------------------------------
     nll = lambda T: -np.log(softmax(oofR / T[0])[np.arange(len(yr)), yr] + 1e-12).mean()
@@ -114,20 +121,35 @@ def main():
     _chk = max(abs(_g.prob(list(x)) - p) for x, p in zip(Xa[:200], gbm.predict_proba(Xa[:200])[:, 1]))
     assert _chk < 1e-6, "exported gate disagrees with LightGBM (%g)" % _chk
     json.dump({"T_route": T_route, "grounded_platt": g_ab, "abstain": thr, "approve_threshold": APPROVE_TH,
-               "n_nets": len(nets), "caps": caps,
+               "n_nets": len(nets), "caps": caps, "arch": args.arch,
                "approve_iso": {"x": iso.X_thresholds_.tolist(), "y": iso.y_thresholds_.tolist()}},
               open(os.path.join(args.out, "calibration.json"), "w"))
     print("saved artifacts %.0fs" % (time.time() - t0))
 
     # ---- honest evaluation on dev (only meaningful without --final) ------------------------
     items_d = [encode(r["state"], vocab) for r in dv]
-    from decide.net import np_forward  # numpy path == serving path
-    import torch as _t
+    from decide.net import np_forward, np_forward_typed  # numpy path == serving path
     Rl, Al, Gl = [], [], []
     for it in items_d:
-        rr = [np_forward(sd, it[0], it[1], it[2]) for sd in nets]
-        Rl.append(np.mean([x[0] for x in rr], 0)); Al.append(np.mean([x[1] for x in rr])); Gl.append(np.mean([x[2] for x in rr]))
+        if args.arch == "typed":
+            Rl.append(np.mean([np_forward_typed(sd, *it, 0) for sd in nets], 0))
+            Al.append(np.mean([np_forward_typed(sd, *it, 1) for sd in nets]))
+            Gl.append(np.mean([np_forward_typed(sd, *it, 2) for sd in nets]))
+        else:
+            rr = [np_forward(sd, it[0], it[1], it[2]) for sd in nets]
+            Rl.append(np.mean([x[0] for x in rr], 0)); Al.append(np.mean([x[1] for x in rr])); Gl.append(np.mean([x[2] for x in rr]))
     Rl, Al, Gl = np.array(Rl), np.array(Al), np.array(Gl)
+    # the numpy path must reproduce torch exactly
+    _r, _a, _g = predict(m, items_d[:64])
+    if args.repeats * args.folds == 1:
+        assert np.allclose(_r, Rl[:64], atol=1e-3)
+    else:
+        sd = nets[-1]
+        f = (lambda it, q: np_forward_typed(sd, *it, q)) if args.arch == "typed" else None
+        if f:
+            assert np.allclose(_r, np.array([f(it, 0) for it in items_d[:64]]), atol=1e-3), "numpy != torch (route)"
+            assert np.allclose(_a, np.array([f(it, 1) for it in items_d[:64]]), atol=1e-3), "numpy != torch (approve)"
+            assert np.allclose(_g, np.array([f(it, 2) for it in items_d[:64]]), atol=1e-3), "numpy != torch (grounded)"
     Pr = softmax(Rl / T_route)
     Pg = sig(g_ab[0] * Gl + g_ab[1])
     Pa = iso.predict(gbm.predict_proba(gbm_feats([r["state"] for r in dv], Al))[:, 1])

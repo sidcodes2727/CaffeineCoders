@@ -2,7 +2,9 @@ import json, math, random
 import numpy as np
 import torch
 import torch.nn.functional as F
-from decide.torchnet import SharedNet
+from decide.torchnet import SharedNet, TypedNet
+
+ARCHS = {"shared": SharedNet, "typed": TypedNet}
 
 QUEUES = ["billing", "technical", "account", "shipping", "general"]
 
@@ -22,9 +24,10 @@ def collate(items, idx):
 
 
 def train_net(items, yr, ya, yg, amask, n_vocab, epochs=30, dim=128, lr=3e-3, wd=1e-2, bs=64,
-              seed=0, p=0.3, w_task=(1.0, 1.0, 1.0), wide_mask=None, wide_wd=0.5, ls=0.0, tok_drop=0.0):
+              seed=0, p=0.3, w_task=(1.0, 1.0, 1.0), wide_mask=None, wide_wd=0.5, ls=0.0, tok_drop=0.0,
+              arch="shared"):
     torch.manual_seed(seed); random.seed(seed)
-    m = SharedNet(n_vocab, dim=dim, p=p, wide_mask=wide_mask)
+    m = ARCHS[arch](n_vocab, dim=dim, p=p, wide_mask=wide_mask)
     wide_p = [m.wide.weight]
     rest = [q for q in m.parameters() if q is not m.wide.weight]
     opt = torch.optim.AdamW([{"params": rest, "weight_decay": wd}, {"params": wide_p, "weight_decay": wide_wd}], lr=lr)
