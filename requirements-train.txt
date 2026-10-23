@@ -1,7 +1,9 @@
 # Only needed to retrain (python train.py). Not needed to serve.
-# Versions actually used: torch 2.8.0, scikit-learn 1.6.1, scipy 1.13.1, lightgbm 4.6.0
+# Versions actually used: torch 2.8.0, scikit-learn 1.6.1, scipy 1.13.1, lightgbm 4.6.0, model2vec 0.7.0
 -r requirements.txt
 torch>=2.1
 scikit-learn>=1.3
 scipy>=1.10
 lightgbm>=4.0
+# only for tools/export_m2v.py (the exported table is already committed in artifacts/)
+model2vec>=0.7

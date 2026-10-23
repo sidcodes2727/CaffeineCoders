@@ -54,3 +54,30 @@ def np_forward_typed(sd: dict, ids: np.ndarray, w: np.ndarray, x: np.ndarray, q:
     if q == Q_APPROVE:
         logit += float((sd["wide.weight"][ids, 0] * sd["wide_mask"][ids, 0] * w).sum())
     return logit
+
+
+def stack(nets: list) -> dict:
+    """Stack N TypedNet state dicts along a new leading axis (for np_forward_typed_ens)."""
+    return {k: np.stack([sd[k] for sd in nets]) for k in nets[0]}
+
+
+def np_forward_typed_ens(S: dict, ids: np.ndarray, w: np.ndarray, x: np.ndarray, q: int):
+    """All N ensemble members in one pass; returns the member-averaged answer (same as looping)."""
+    qv = S["q.weight"][:, q]                                               # (N, d)
+    h = np.einsum("nkd,k->nd", S["emb.weight"][:, ids], w)                 # (N, d)
+    h = h + np.einsum("nod,d->no", S["num.weight"], x) + S["num.bias"] + qv
+    h = _gelu(_ln(h, S["ln0.weight"], S["ln0.bias"]))
+    d = qv.shape[1]
+    for i in range(2):
+        gb = np.einsum("nod,nd->no", S["film.%d.weight" % i], qv) + S["film.%d.bias" % i]
+        g, b = gb[:, :d], gb[:, d:]
+        z = _ln(h, S["lns.%d.weight" % i], S["lns.%d.bias" % i]) * (1 + g) + b
+        z = _gelu(np.einsum("nod,nd->no", S["blocks.%d.0.weight" % i], z) + S["blocks.%d.0.bias" % i])
+        z = np.einsum("nod,nd->no", S["blocks.%d.3.weight" % i], z) + S["blocks.%d.3.bias" % i]
+        h = h + z
+    if q == Q_ROUTE:
+        return (np.einsum("nd,nkd->nk", h, S["options"]) + S["opt_bias"]).mean(0)
+    logit = np.einsum("nd,nod->no", h, S["binary.weight"])[:, 0] + S["binary.bias"][:, 0]
+    if q == Q_APPROVE:
+        logit = logit + (S["wide.weight"][:, ids, 0] * S["wide_mask"][:, ids, 0] * w).sum(1)
+    return float(logit.mean())

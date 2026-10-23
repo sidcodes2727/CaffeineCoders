@@ -16,73 +16,73 @@
   },
   "latency_ms": {
     "p50": {
-      "route": 1.4170205000000324,
-      "approve": 1.491541500000082,
-      "grounded": 1.4167910000002504
+      "route": 2.1602079999998303,
+      "approve": 2.226791500000158,
+      "grounded": 2.148124999999723
     },
     "p95": {
-      "route": 1.4981785500001843,
-      "approve": 1.5861812500001848,
-      "grounded": 1.5043107499999098
+      "route": 2.430478850000067,
+      "approve": 2.5165931499999017,
+      "grounded": 2.4258353999987214
     },
-    "mean_p95": 1.529556850000093,
-    "overall_p50": 1.4396045000002466,
-    "overall_p95": 1.551921150000024,
-    "server_self_reported_p95": 1.207,
+    "mean_p95": 2.4576357999995633,
+    "overall_p50": 2.1768119999999724,
+    "overall_p95": 2.4667172999996767,
+    "server_self_reported_p95": 2.1110500000000005,
     "reconnects": 0
   },
   "quality": {
-    "route_macro_f1": 0.9433813363614216,
+    "route_macro_f1": 0.9454896912036389,
     "route_acc": 0.9246666666666666,
     "coverage": {
-      "route": 0.8526666666666667,
-      "approve": 0.8646666666666667,
-      "grounded": 0.852
+      "route": 0.8486666666666667,
+      "approve": 0.8346666666666667,
+      "grounded": 0.9
     },
-    "approve_cost": 0.2166538164996145,
-    "approve_macro_f1": 0.8896962860794964,
-    "grounded_macro_f1": 0.9975704330446454,
+    "approve_cost": 0.19329073482428116,
+    "approve_macro_f1": 0.9105682345798064,
+    "grounded_macro_f1": 0.9945473397653567,
     "fp_cost": 3.0,
     "trivial": {
-      "route_macro_f1": 0.08184079601990049,
-      "approve_cost_always_hold": 0.361603700848111,
-      "approve_cost_always_approve": 1.915188897455667,
-      "grounded_macro_f1": 0.37137235612395475
+      "route_macro_f1": 0.08115216030056356,
+      "approve_cost_always_hold": 0.35303514376996803,
+      "approve_cost_always_approve": 1.940894568690096,
+      "grounded_macro_f1": 0.3781667434362045
     }
   },
   "calibration": {
-    "route_ece": 0.02159272394577661,
-    "approve_ece": 0.014504983884718006,
-    "grounded_ece": 0.005142446199743767,
-    "approve_brier": 0.09148183838729743,
-    "grounded_brier": 0.010979698138731259,
-    "mean_ece": 0.013746718010079461,
-    "mean_brier": 0.05123076826301434,
-    "brier_skill": 0.8018107744666428,
-    "route_brier": 0.13455990739008844
+    "route_ece": 0.02578978088128187,
+    "approve_ece": 0.014888289210586733,
+    "grounded_ece": 0.011207032777939527,
+    "approve_brier": 0.08579284923177961,
+    "grounded_brier": 0.014096415224632161,
+    "mean_ece": 0.017295034289936045,
+    "mean_brier": 0.04994463222820589,
+    "brier_skill": 0.8050450505759622,
+    "route_brier": 0.134950625688364
   },
   "abstention": {
     "risk_at_80": {
-      "route": 0.053333333333333344,
-      "approve": 0.06833333333333336,
-      "grounded": 0.0008333333333333526
+      "route": 0.05500000000000005,
+      "approve": 0.06166666666666665,
+      "grounded": 0.004166666666666652
     },
     "full_error": {
       "route": 0.07533333333333336,
-      "approve": 0.1253333333333333,
-      "grounded": 0.013333333333333308
+      "approve": 0.11933333333333329,
+      "grounded": 0.01666666666666672
     },
     "declared_coverage": {
-      "route": 0.8526666666666667,
-      "approve": 0.8646666666666667,
-      "grounded": 0.852
+      "route": 0.8486666666666667,
+      "approve": 0.8346666666666667,
+      "grounded": 0.9
     }
   },
   "score_parts": {
-    "quality": 0.828369791490741,
-    "calibration": 0.8665385922081228,
+    "quality": 0.8404243998794468,
+    "calibration": 0.859284939563141,
     "latency": 1.0,
-    "abstention": 0.5614408774242133
+    "abstention": 0.5010505759628224
   },
-  "score": 83.2198696261959
+  "score": 82.61485812369872
 }

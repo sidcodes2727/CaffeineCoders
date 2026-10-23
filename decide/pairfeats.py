@@ -62,46 +62,99 @@ def canon(text: str) -> str:
     return t
 
 
+def _stem(t: str) -> str:
+    if t.startswith(("dur_", "rate_")) or (t[0] == "n" and t[1:].isdigit()) or len(t) <= 4:
+        return t
+    for suf, rep in (("ies", "y"), ("ing", ""), ("ed", ""), ("es", ""), ("s", "")):
+        if t.endswith(suf) and len(t) - len(suf) >= 3:
+            return t[:-len(suf)] + rep
+    return t
+
+
 def toks(text: str):
-    return _TOK.findall(canon(text))
+    return [_stem(t) for t in _TOK.findall(canon(text))]
 
 
-STOP = set("""the a an of to in on at is are be by for and or with that this it as you your we our i so
-from will can may use within up ahead before after each every any no new has have per then than""".split())
+# function words and conversational filler: never facts, so never evidence of (un)support
+STOP = set(_stem(w) for w in """the a an of to in on at is are be by for and or with that this it as you your we our i so
+from will can may use within up ahead before after each every any no new has have per then than
+hi hello hey there thanks thank please sorry hope helps help just also me my us am was were been being do does did
+done would could should shall let know here what which who how when if but not all""".split()) - {"all", "not"}
+
+
+_SENT = re.compile(r"(?<=[.?!])\s+")
+
+
+def split_kb(draft: str, kb: str):
+    """
+    (relevant, other) article text. A help article can hold many facts the reply never mentions.
+    A sentence is relevant when it shares at least two content tokens (numbers/durations count) with
+    the draft, or 30% of its own tokens - so a sentence that contradicts the draft ("14 days" vs
+    "30 days") shares its topic words and stays relevant. Nothing is discarded: tokens that occur only
+    in the other sentences get their own namespace, and the model learns how much they matter.
+    """
+    sents = [x for x in _SENT.split(kb) if x.strip()]
+    if len(sents) <= 1:
+        return kb, ""
+    dt = set(toks(draft)) - STOP
+    rel, oth = [], []
+    for x in sents:
+        st = set(toks(x)) - STOP
+        ov = len(st & dt)
+        (rel if (ov >= 2 or (st and ov / len(st) >= 0.3)) else oth).append(x)
+    if not rel:
+        return kb, ""
+    return " ".join(rel), " ".join(oth)
+
+
+def _isnum(t: str) -> bool:
+    return t.startswith(("dur_", "rate_")) or (t[0] == "n" and t[1:].isdigit())
 
 
 def pair_tokens(draft: str, kb: str):
-    """Hashable feature names describing how the draft differs from the article."""
-    dt, kt = toks(draft), toks(kb)
-    ds, ks = set(dt) - STOP, set(kt) - STOP
-    f = []
-    d_only, k_only = sorted(ds - ks), sorted(ks - ds)
-    f += ["D:" + t for t in d_only]
-    f += ["K:" + t for t in k_only]
-    f += ["S:" + t for t in sorted(ds & ks)]
+    """
+    Feature names describing how the draft differs from the article.
+      D: draft token found nowhere in the article          S: token in both
+      K: relevant-article token missing from the draft    Q: token only in unrelated article sentences
+    """
+    rel, oth = split_kb(draft, kb)
+    ds = set(toks(draft)) - STOP
+    ka = set(toks(kb)) - STOP
+    kr = set(toks(rel)) - STOP
+    d_only, k_only, q_only = sorted(ds - ka), sorted(kr - ds), sorted((ka - kr) - ds)
+    f = ["D:" + t for t in d_only] + ["K:" + t for t in k_only] + ["Q:" + t for t in q_only]
+    f += ["S:" + t for t in sorted(ds & ka)]
     # numeric facts are the most decisive: durations / counts / rates
-    dn = {t for t in ds if t.startswith(("dur_", "rate_")) or ((t[0] == "n" and t[1:].isdigit()))}
-    kn = {t for t in ks if t.startswith(("dur_", "rate_")) or ((t[0] == "n" and t[1:].isdigit()))}
-    f.append("numD_notinK=%d" % min(len(dn - kn), 3))
-    f.append("numK_notinD=%d" % min(len(kn - dn), 3))
-    for a in sorted(dn - kn):
-        for b in sorted(kn - dn):
+    dn = {t for t in ds if _isnum(t)}
+    dn_un = dn - {t for t in ka if _isnum(t)}
+    kn = {t for t in kr if _isnum(t)} - dn
+    qn = {t for t in (ka - kr) if _isnum(t)} - dn
+    f.append("numD_notinK=%d" % min(len(dn_un), 3))
+    f.append("numK_notinD=%d" % min(len(kn), 3))
+    f.append("numQ_notinD=%d" % min(len(qn), 3))
+    for a in sorted(dn_un):
+        for b in sorted(kn):
             if a.split("_")[0] == b.split("_")[0]:
                 f.append("X:%s>%s" % (a, b))
+        for b in sorted(qn):
+            if a.split("_")[0] == b.split("_")[0]:
+                f.append("XQ:%s>%s" % (a, b))
     # cross pairs of the (few) differing non-numeric tokens
-    dw = [t for t in d_only if not (t.startswith(("dur_", "rate_")) or (t[0] == "n" and t[1:].isdigit()))][:6]
-    kw = [t for t in k_only if not (t.startswith(("dur_", "rate_")) or (t[0] == "n" and t[1:].isdigit()))][:6]
+    dw = [t for t in d_only if not _isnum(t)][:6]
+    kw = [t for t in k_only if not _isnum(t)][:6]
     for a in dw:
         for b in kw:
             f.append("P:%s>%s" % (a, b))
     f.append("nD=%d" % min(len(d_only), 8))
     f.append("nK=%d" % min(len(k_only), 8))
+    f.append("nQ=%d" % min(len(q_only), 8))
     return f
 
 
 def dense(draft: str, kb: str):
+    rel, _ = split_kb(draft, kb)
     dt, kt = toks(draft), toks(kb)
-    ds, ks = set(dt) - STOP, set(kt) - STOP
+    ds, ks, kr = set(dt) - STOP, set(kt) - STOP, set(toks(rel)) - STOP
     inter = len(ds & ks)
-    return [len(ds - ks) / max(1, len(ds)), len(ks - ds) / max(1, len(ks)),
-            inter / max(1, len(ds | ks)), len(dt) / 50.0, len(kt) / 50.0]
+    return [len(ds - ks) / max(1, len(ds)), len(kr - ds) / max(1, len(kr)),
+            inter / max(1, len(ds | kr)), len(dt) / 50.0, len(toks(rel)) / 50.0]

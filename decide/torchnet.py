@@ -18,10 +18,11 @@ class SharedNet(nn.Module):
     The trunk is the only place the decision types meet.
     """
 
-    def __init__(self, vocab: int, dim: int = 128, n_route: int = 5, p: float = 0.3, wide_mask=None):
+    def __init__(self, vocab: int, dim: int = 128, n_route: int = 5, p: float = 0.3, wide_mask=None,
+                 n_num: int = N_PAIR):
         super().__init__()
         self.emb = nn.EmbeddingBag(vocab, dim, mode="sum")
-        self.num = nn.Linear(N_PAIR, dim)
+        self.num = nn.Linear(n_num, dim)
         self.ln0 = nn.LayerNorm(dim)
         self.blocks = nn.ModuleList(
             [nn.Sequential(nn.Linear(dim, dim * 2), nn.GELU(approximate="tanh"), nn.Dropout(p),
@@ -69,10 +70,10 @@ class TypedNet(nn.Module):
     Q_ROUTE, Q_APPROVE, Q_GROUNDED = 0, 1, 2
 
     def __init__(self, vocab: int, dim: int = 128, n_route: int = 5, p: float = 0.3, wide_mask=None,
-                 n_q: int = 3):
+                 n_q: int = 3, n_num: int = N_PAIR):
         super().__init__()
         self.emb = nn.EmbeddingBag(vocab, dim, mode="sum")
-        self.num = nn.Linear(N_PAIR, dim)
+        self.num = nn.Linear(n_num, dim)
         self.q = nn.Embedding(n_q, dim)
         self.ln0 = nn.LayerNorm(dim)
         self.blocks = nn.ModuleList(
