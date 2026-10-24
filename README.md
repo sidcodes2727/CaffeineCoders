@@ -86,9 +86,11 @@ one 128-d question embedding and its FiLM projection. A fourth yes/no decision =
 * **Augmentation** (`decide/augment.py`): one perturbed copy per training ticket (typos, marker dropped, sentences
   shuffled, filler/distractor clauses, synonyms, case; for drafts: openers/closers, typos). Its synonym and filler
   lists are **disjoint** from the test perturbations, and several test perturbation types are never used in training.
-* **Serving safety**: lenient input coercion in `app.py` (amounts like `"1,200"`, `"$1.2k"`, `"twelve hundred"`;
-  wrong-typed fields; numeric `request_id`), text truncated at 2,000 chars per field, and every decision wrapped so an
-  unexpected failure returns a valid abstaining answer instead of an error.
+* **Serving safety**: `app.py` is the starter's, unchanged (per the submission guidelines), so null fields are
+  coerced and a request that breaks the schema (e.g. an amount like `"$1.2k"`, or a list where text belongs) gets the
+  starter's clean HTTP 422. Everything past that point is ours: `model.py` parses odd amounts itself, text is truncated at
+  2,000 chars per field, and every decision is wrapped so an unexpected failure returns a valid abstaining answer
+  instead of an error.
 
 ## Calibration and abstention
 
@@ -192,7 +194,7 @@ python tools/fit_cascade.py --nn-holdout <dir of the --holdout 0.15 run> --nli a
 ## Layout
 
 ```
-app.py            HTTP layer (starter + lenient input coercion; response shape unchanged)
+app.py            HTTP layer, the starter's file unchanged
 model.py          DecisionModel: typed-question forward pass + calibration + abstention + safe fallback
 decide/           textnorm, textproc, roles (side-opener detector), pairfeats, features, m2v, encode, net (numpy),
                   gate, nli + cascade (grounded cross-encoder), torchnet + augment (training only)

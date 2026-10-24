@@ -25,7 +25,8 @@ recipe trained on train only (v9), with dev never used for training, calibration
 
 Composite **85.07** on dev, **84.28** on the hard perturbed set, mean **82.59** over 9 dev-derived stress sets.
 Repeated CV (3 seeds) **84.54 ± 0.21**; untouched 15% holdout **82.10**. v9-final (shipped) repeated CV on all 8,000
-rows: 84.82 ± 0.38. Gates pass; 61/61 malformed inputs answered schema-valid; clean-clone start verified
+rows: 84.82 ± 0.38. Gates pass; with the unchanged starter `app.py`, 43/61 deliberately malformed inputs get a valid
+answer and the rest (string amounts, wrong-typed fields) get a clean HTTP 422; clean-clone start verified
 (scored latency 2.3 ms).
 
 ## Where it fails

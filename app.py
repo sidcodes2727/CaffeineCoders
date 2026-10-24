@@ -10,10 +10,6 @@ and dispatches to DecisionModel in model.py. If you change the response shape
 here, automated judging will reject your submission - so if something needs to
 change, change model.py.
 
-Only change from the starter: input coercion is lenient (wrong-typed text fields,
-amounts like "1,200" / "$1.2k" / "twelve hundred", non-string request_id) so odd
-inputs get an answer instead of a 422. The response shape is untouched.
-
 Run it with:
 
     uvicorn app:app --host 0.0.0.0 --port 8000
@@ -28,7 +24,6 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
-from decide.features import parse_amount
 from model import QUEUES, DecisionModel
 
 PROB_TOLERANCE = 0.01
@@ -55,33 +50,22 @@ class State(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    # Nulls and wrong types are coerced rather than rejected. A 422 here would
-    # count as a malformed response and fail the schema gate.
+    # An explicit null in a field is coerced rather than rejected. A 422 here
+    # would count as a malformed response and fail the schema gate.
     @field_validator("subject", "body", "customer_tier", "draft_reply",
                      "kb_article", mode="before")
     @classmethod
     def _blank_if_null(cls, v: Any) -> Any:
-        if v is None:
-            return ""
-        if isinstance(v, (list, tuple)):
-            return " ".join(str(x) for x in v)
-        return v if isinstance(v, str) else str(v)
+        return "" if v is None else v
 
-    # "1,200", "$1.2k", "twelve hundred", "NaN", -5 ... -> a finite non-negative float.
     @field_validator("amount", mode="before")
     @classmethod
-    def _parse_amount(cls, v: Any) -> Any:
-        return parse_amount(v)
+    def _zero_if_null(cls, v: Any) -> Any:
+        return 0.0 if v is None else v
 
 
 class DecideRequest(BaseModel):
-    request_id: str = ""
-
-    @field_validator("request_id", mode="before")
-    @classmethod
-    def _id_to_str(cls, v: Any) -> Any:
-        return "" if v is None else (v if isinstance(v, str) else str(v))
-
+    request_id: str
     decision: Literal["route", "approve", "grounded"]
     state: State
 
