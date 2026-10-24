@@ -13,8 +13,9 @@ CPU only, no network calls at serving time. p95 per call ≈ 2 ms for every deci
 | 9 dev-derived sets incl. 7 complex-query variants (`tests/compare_report.json`) | mean **82.59** |
 | repeated CV, 3 seeds, train only / untouched 15% holdout | **84.54 ± 0.21** / **82.10** |
 
-The shipped `artifacts/` are **v9-final**: the same recipe retrained on train + dev (8,000 rows), calibrators and
-thresholds refitted out-of-fold (repeated CV 84.85 ± 0.46). Its dev score is in-sample, so `results.json` reports
+The shipped `artifacts/` are **v9-final**: the same recipe retrained on train + dev (8,000 rows) as a **15-network
+ensemble** (3 seeds × 5 folds; on the untouched holdout 15 networks scored 82.10 vs 81.18 for 10, mostly better
+abstention ranking), calibrators and thresholds refitted out-of-fold (repeated CV 84.82 ± 0.38). Its dev score is in-sample, so `results.json` reports
 the train-only v9 above. The grounded cross-encoder cascade ships in `artifacts/nli/` but is **opt-in**
 (`DECIDE_CASCADE=1`): since v9 the network alone scores higher on clean tickets (dev 85.07 vs 84.79) at 2 ms
 instead of 11 ms; the cascade only wins on heavily perturbed text (mean over the 9 stress sets 82.79 vs 82.59).
@@ -25,7 +26,7 @@ instead of 11 ms; the cascade only wins on heavily perturbed text (mean over the
 pip install -r requirements.txt && uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-Weights are committed in `artifacts/` (179 MB; largest file 83 MB, under GitHub's 100 MB limit). Health check: `curl localhost:8000/health`.
+Weights are committed in `artifacts/` (219 MB; largest file 83 MB, under GitHub's 100 MB limit). Health check: `curl localhost:8000/health`.
 Score it: `python selfcheck.py --url http://localhost:8000/v1/decide` (writes `results.json`).
 Serving needs `fastapi`, `uvicorn`, `numpy`, plus `onnxruntime` + `tokenizers` for the grounded
 cross-encoder (prebuilt wheels; without them the service still starts and grounded uses the network alone).
@@ -65,7 +66,7 @@ under ~55 ms.
 Shared: the embedding table, the whole trunk, the binary head (both yes/no questions). Question-specific:
 one 128-d question embedding and its FiLM projection. A fourth yes/no decision = one new question embedding
 + a calibrator. Code: `decide/torchnet.py::TypedNet` (training), `decide/net.py::np_forward_typed_ens`
-(serving, all 10 ensemble members in one vectorised pass).
+(serving, all 15 ensemble members in one vectorised pass).
 
 ## What each decision compares
 
@@ -147,6 +148,10 @@ one 128-d question embedding and its FiLM projection. A fourth yes/no decision =
   action type and length (no subgroup to flip); class-weighted route `value`, approve threshold 0.70–0.80 and grounded
   threshold changed nothing; shaping route's leftover probability to the noise pattern moved Brier skill by 1e-4.
   Out-of-fold grounded errors revealed two label rules (business days, scope hierarchy) - fixed in v9.
+* **Go / no-go test for further rule mining** (v9 out-of-fold; depth-3 trees checked on two halves + an
+  "is this prediction wrong?" LightGBM on interpretable features): route error-classifier AUC 0.571 (model's own
+  confidence 0.634), grounded 0.630 (own 0.948), approve inside the safe zone 0.613 and near the cap 0.658 - all
+  below 0.65, i.e. the remaining errors are label noise / hidden account history. Practical ceiling ≈ 86-87.
 * Robustness suite: `python tests/make_hard.py`, `python tests/make_complex.py`, then
   `python tests/stress.py --url ...` and `python tests/robustness.py --url ... --cold` (invariance, directional,
   slice, edge-case, latency/determinism; report `tests/robustness_report.json`).
