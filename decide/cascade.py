@@ -37,7 +37,9 @@ def _logit(p: float) -> float:
 def design(p_nn: float, ce: float, g: Dict[str, float]) -> List[float]:
     lg = _logit(p_nn)
     gap = min(g["gap"], 6.0) / 6.0
-    return [lg, ce, gap, g["num_mismatch"], lg * gap, ce * gap]
+    # last term: how much the two models disagree (in log-odds), so the combiner can lower its
+    # confidence exactly where they do - the cases most likely to be wrong
+    return [lg, ce, gap, g["num_mismatch"], lg * gap, ce * gap, abs(lg - ce)]
 
 
 class Cascade:

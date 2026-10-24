@@ -6,13 +6,13 @@ One small typed-question network answers three questions about a support request
 CPU only, no network calls at serving time. p95 per call: route ~3 ms, approve ~3 ms, grounded ~25 ms
 (cross-encoder); scored mean of per-decision p95 **~11 ms** (full marks at 25 ms).
 
-| official `selfcheck.py` (version v6) | score | mean p95 |
+| official `selfcheck.py` (version v7) | score | mean p95 |
 |---|---|---|
-| dev split (`results.json`) | **82.96 / 100** | 12.0 ms |
-| hard perturbed dev (`tests/hard_results.json`) | **83.38 / 100** | 11.9 ms |
-| 9 dev-derived sets incl. 7 complex-query variants (`tests/stress_report.json`) | mean **81.43** (76.2 – 83.5) | ≤ 15 ms |
-| repeated CV, 3 seeds, train only | **82.80 ± 0.08** | |
-| untouched 15% holdout of train | **81.24** | |
+| dev split (`results.json`) | **83.06 / 100** | 8.1 ms |
+| hard perturbed dev (`tests/hard_results.json`) | **83.75 / 100** | ~9 ms |
+| 9 dev-derived sets incl. 7 complex-query variants (`tests/stress_report.json`) | mean **81.91** (76.7 – 84.1) | ≤ 15 ms |
+| repeated CV, 3 seeds, train only | **83.79 ± 0.10** | |
+| untouched 15% holdout of train | **81.90** | |
 
 ## Start the service (single command, clean 4-core Linux box)
 
@@ -41,7 +41,8 @@ question ─► question embedding ───────────────
    choice  (route)     h · option_embeddings → 5 logits → temperature softmax
    binary  (grounded)  shared binary head → 1 logit → Platt scaling
    binary  (approve)   same binary head + sparse intent/history term → evidence logit
-                       → monotone policy gate (tier, amount, evidence) → isotonic → p_true
+                       → monotone policy gate (tier, amount, evidence, hold-cue and always-hold-request
+                         similarity) → isotonic → p_true
    route confidence    p(correct) model on [top prob, margin, entropy, disagreement of two independent
                        ensemble members, marker present] rescales the distribution (argmax unchanged)
 
@@ -66,7 +67,7 @@ one 128-d question embedding and its FiLM projection. A fourth yes/no decision =
 | decision | what it is really about | how the model sees it |
 |---|---|---|
 | `route` | the **primary request**, not the subject or side issues ("Less important, but…") | `decide/textproc.py` takes the text after markers like "Priority for me is:"; without a marker it removes side issues found by keyword rules **and** by a learned side-opener detector (`decide/roles.py`: a logistic model over the pretrained embedding of a sentence's opening clause, so unseen openers like "Quick aside:" are recognised). Word + word-pair tokens, char n-grams, and a pretrained sentence embedding of that request |
-| `approve` | **policy**: per-tier amount cap, always-hold intents (2FA reset, deletion, partnerships), history cues ("I raised something similar…"), plus ~14% hidden account history | text-evidence logit from the trunk (incl. cosine similarity of the body to **cue banks mined from the labels**: sentences / requests that are ~always held where the cap cannot be the reason), then a monotone tier×amount gate; approve iff p > **0.75** (3:1 cost) |
+| `approve` | **policy**: per-tier amount cap, always-hold intents (2FA reset, deletion, partnerships), history cues ("I raised something similar…"), plus ~14% hidden account history | text-evidence logit from the trunk (incl. cosine similarity of the body to **cue banks mined from the labels**: sentences / requests that are ~always held where the cap cannot be the reason), then a monotone gate over tier, amount, evidence **and the two cue similarities** (so 'cue → hold' is learnt from every ticket, not only below the cap); approve iff p > **0.75** (3:1 cost) |
 | `grounded` | **draft vs article**, a pair comparison | `decide/pairfeats.py` canonicalises numbers/durations ("fourteen days" = "two weeks", "three hundred" = 300), stems words, ignores filler, and emits draft-only / article-only / cross-pair tokens + soft alignment features |
 
 ## Robustness (the model must not depend on exact template wording)
@@ -88,9 +89,12 @@ one 128-d question embedding and its FiLM projection. A fourth yes/no decision =
 * Every calibrator is fitted on **out-of-fold** logits (2 × 5-fold CV on train) and every option is kept only if it
   wins on cross-fitted predictions: route = temperature + per-class bias + p(correct) recalibration (chosen over
   temperature alone: ECE 0.031 → 0.012 in the smoke run, small gain at full training); grounded = Platt, then the
-  cascade; approve = isotonic (over Platt / blend), with the ensemble-disagreement gate input tried and rejected.
+  cascade (combiner also sees network-vs-cross-encoder disagreement); approve = isotonic (over Platt / blend); an
+  ensemble-disagreement gate input and an approve p(correct) meta-model were tried and rejected on cross-fitted data.
 * `value` for approve is `p_true > 0.75`; `p_true` itself stays the calibrated probability.
-* Abstain thresholds come from OOF quantiles: route and approve target **83.5%** coverage, grounded **88%**
+* Abstain thresholds come from OOF quantiles: route **83.5%** coverage (its errors are random label noise, so abstaining
+  more removes few of them), approve **82%** (abstaining on the highest expected cost cuts cost directly; `cov_scale` is
+  linear below 80% and ~2,000 hidden rows move coverage by ~1%), grounded **88%**
   (fitted on clean + perturbed OOF, so coverage stays above 80% when wording drifts). Approve abstains on the
   highest expected cost `min(3(1-p), p)`, ranked on a tie-free view of the gate (isotonic steps tie many cases).
 
@@ -103,29 +107,35 @@ one 128-d question embedding and its FiLM projection. A fourth yes/no decision =
 |---|---|---|---|---|---|
 | no pretrained embedding / spell / augmentation (ablation) | 80.48 ± 0.16 | 79.99 | 71.90 | 81.12 | 72.10 |
 | v5 | 81.76 ± 0.47 | 80.92 | 79.34 | 82.90 | 81.28 |
-| **v6** (+ side-opener detector, cue banks, route p(correct)) | **82.80 ± 0.08** | **81.24** | **79.81** | **82.95** | **81.77** |
+| v6 (+ side-opener detector, cue banks, route p(correct)) | 82.80 ± 0.08 | 81.24 | 79.81 | 82.95 | 81.77 |
+| **v7** (+ cue inputs in the approve gate, approve coverage 82%) | **83.79 ± 0.10** | **81.90** | **80.31** | 82.87 | **81.98** |
 
 * **Version comparison**, official `selfcheck.py`, each version served from its own snapshot of code + artifacts
   (`tests/compare_versions.py`; report `tests/compare_report.json`):
 
-| set | v5 network | v5 + cascade | v6 network | **v6 + cascade (shipped)** |
-|---|---|---|---|---|
-| dev | 83.02 | **83.17** | 83.00 | 82.96 |
-| hard_dev | 82.20 | 83.20 | 82.20 | **83.38** |
-| buried_request | 81.63 | 82.48 | 82.59 | **82.97** |
-| everything (all stresses + surface noise) | 73.08 | 77.15 | 74.19 | **78.02** |
-| long_kb (unrelated facts appended to the article) | 80.56 | 82.74 | 80.98 | **82.75** |
-| long_ticket | 81.17 | 80.66 | **81.18** | 80.51 |
-| multi_issue | 81.75 | 82.36 | 82.21 | **82.64** |
-| multi_issue_fresh (side-issue phrasing held out from rules and detector) | 74.78 | 74.72 | **76.28** | 76.16 |
-| multi_issue_new | 83.07 | **83.61** | 83.08 | 83.46 |
-| **mean** | 80.14 | 81.12 | 80.64 | **81.43** |
-| scored latency (mean p95, dev) | 2.0 ms | 9.5 ms | 2.1 ms | 11.0 ms |
+| set | v5 network | v5 + cascade | v6 network | v6 + cascade | v7 network | **v7 + cascade (shipped)** |
+|---|---|---|---|---|---|---|
+| dev | 83.02 | 83.17 | 83.00 | 82.96 | **83.23** | 83.06 |
+| hard_dev | 82.20 | 83.20 | 82.20 | 83.38 | 82.65 | **83.75** |
+| buried_request | 81.63 | 82.48 | 82.59 | 82.97 | 83.13 | **83.30** |
+| everything (all stresses + noise) | 73.08 | 77.15 | 74.19 | 78.02 | 75.12 | **78.66** |
+| long_kb | 80.56 | 82.74 | 80.98 | 82.75 | 81.26 | **82.99** |
+| long_ticket | 81.17 | 80.66 | 81.18 | 80.51 | 81.54 | **81.66** |
+| multi_issue | 81.75 | 82.36 | 82.21 | 82.64 | 82.46 | **82.97** |
+| multi_issue_fresh (held-out side-issue phrasing) | 74.78 | 74.72 | 76.28 | 76.16 | 76.61 | **76.70** |
+| multi_issue_new | 83.07 | 83.61 | 83.08 | 83.46 | 83.16 | **84.12** |
+| **mean** | 80.14 | 81.12 | 80.64 | 81.43 | 81.02 | **81.91** |
+| scored latency (mean p95, dev) | 2.0 ms | 9.5 ms | 2.1 ms | 11.0 ms | 2.1 ms | 8.9 ms |
 
   Earlier versions were trained with code that has since changed, so they cannot be re-served; measured at the
   time on dev / hard dev: v1 multi-head net 81.79 / –, v2 typed net 83.22 / **71.20**, v3 robust 82.61 / 82.47.
-* **v6-final** (same recipe trained on train + dev, 8,000 rows) is kept outside the repo as an option: repeated CV
-  83.13 ± 0.81; its dev-based scores are in-sample, so `results.json` comes from the train-only v6.
+* **Analyses that decided what not to build** (out-of-fold, v6): the ~8% route label noise is random (the wrong
+  label matches the subject / side-clause / first-sentence queue at or below chance; a "will this be wrong?" model
+  reaches AUC 0.632 vs 0.639 for plain confidence). A depth-4 tree recovers the approve rule (cap ≈ 1.36 × p90 approved
+  amount per tier; hold on history cues, deletion/GDPR, 2FA); 75% of approve cost is the ~15% hidden-history holds
+  below the cap, 16% the fuzzy cap boundary, and the recoverable part (history-cue tickets approved) was fixed in v7.
+* **v7-final** (same recipe on train + dev, 8,000 rows) is kept outside the repo as an option: repeated CV
+  83.34 ± 0.73, no measurable gain over v7, so the train-only v7 is shipped and `results.json` stays held-out.
 * Robustness suite: `python tests/make_hard.py`, `python tests/make_complex.py`, then
   `python tests/stress.py --url ...` and `python tests/robustness.py --url ... --cold` (invariance, directional,
   slice, edge-case, latency/determinism; report `tests/robustness_report.json`).

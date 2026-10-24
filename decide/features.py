@@ -64,6 +64,10 @@ def init(artifacts_dir: str, speller: bool = True) -> None:
     SIDE = SideOpener.load(os.path.join(artifacts_dir, "side_opener.json"), M2V)
     p = os.path.join(artifacts_dir, "cue_bank.npz")
     CUES = {k: v.astype(np.float32) for k, v in np.load(p).items()} if os.path.exists(p) else None
+    import json
+    from . import pairfeats
+    p = os.path.join(artifacts_dir, "scope_rules.json")
+    pairfeats.SCOPE_RULES = {tuple(x) for x in json.load(open(p))} if os.path.exists(p) else set()
 
 
 def cue_sims(intent: str, sentences: List[str]) -> List[float]:

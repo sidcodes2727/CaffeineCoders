@@ -36,7 +36,7 @@ _SPECIAL = [(re.compile(r"\ba quarter of an hour\b"), "dur_15"),
             (re.compile(r"\ba fortnight\b"), "dur_20160")]
 _DUR = re.compile(r"\b%s[\s-]+(business[\s-]+)?(minutes?|hours?|days?|weeks?|months?)\b" % _NUM)
 _RATE = re.compile(r"\b%s\s+requests\s+per\s+minute\b" % _NUM)
-_TOK = re.compile(r"dur_\d+|rate_\d+|n\d+|[a-z]+")
+_TOK = re.compile(r"dur_\d+b?|rate_\d+|n\d+|[a-z]+")
 
 
 def _val(s):
@@ -55,7 +55,9 @@ def canon(text: str) -> str:
         n = _val(m.group(1))
         unit = _UNIT[m.group(3)]
         minutes = int(round(n * unit))
-        return " dur_%d " % minutes
+        # business days are a different fact from hours/days ("48 hours" != "2 business days":
+        # every such pair in the training labels is ungrounded), so they keep their own suffix
+        return " dur_%d%s " % (minutes, "b" if m.group(2) else "")
     t = _RATE.sub(lambda m: " rate_%d " % int(_val(m.group(1))), t)
     t = _DUR.sub(dur, t)
     t = re.sub(r"\b(\d+)\b", r" n\1 ", t)        # bare counts ("five failed attempts" -> n5)
@@ -111,6 +113,30 @@ def _isnum(t: str) -> bool:
     return t.startswith(("dur_", "rate_")) or (t[0] == "n" and t[1:].isdigit())
 
 
+# Who / what a policy applies to. Scopes nest (all users > administrators > workspace owners,
+# all subscribers > monthly > annual, ...): a draft may name the article's scope or a narrower one,
+# never a different or wider one. The phrase list is the data's own vocabulary.
+SCOPES = sorted(["all orders", "domestic orders", "insured shipments", "all subscribers", "monthly subscribers",
+                 "annual subscribers", "all users", "administrators", "workspace owners", "all plans",
+                 "all paid plans", "pro and enterprise", "enterprise", "all api keys", "starter keys",
+                 "sandbox keys", "all physical goods", "items bought directly"], key=len, reverse=True)
+SCOPE_RULES = set()      # forbidden (article scope, draft scope) pairs, mined from training labels
+
+
+def scopes(text: str):
+    t, found = text.lower(), set()
+    for sc in SCOPES:
+        if sc in t:
+            found.add(sc)
+            t = t.replace(sc, " ")
+    return found
+
+
+def scope_pairs(draft: str, kb: str):
+    ks, ds = scopes(kb), scopes(draft)
+    return [(k, d) for k in sorted(ks) for d in sorted(ds) if k != d and d not in ks]
+
+
 def pair_tokens(draft: str, kb: str):
     """
     Feature names describing how the draft differs from the article.
@@ -148,6 +174,10 @@ def pair_tokens(draft: str, kb: str):
     f.append("nD=%d" % min(len(d_only), 8))
     f.append("nK=%d" % min(len(k_only), 8))
     f.append("nQ=%d" % min(len(q_only), 8))
+    # directional scope pairs (article scope -> draft scope) + the mined forbidden-pair flag
+    sp = scope_pairs(draft, kb)
+    f += ["SP:%s>%s" % (k.replace(" ", "_"), d.replace(" ", "_")) for k, d in sp]
+    f.append("scope_bad=%d" % any(p in SCOPE_RULES for p in sp))
     return f
 
 

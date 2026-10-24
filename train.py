@@ -18,10 +18,10 @@ from sklearn.model_selection import StratifiedKFold
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "tests"))
-from decide import features, textnorm
+from decide import features, pairfeats, textnorm
 from decide.augment import augment_state, build_pools
 from decide.encode import build_vocab, encode_feats
-from decide.features import H_BUCKETS, N_NUM, featurize, tier_amount
+from decide.features import H_BUCKETS, N_CUE, N_NUM, O_CUE, featurize, tier_amount
 from decide.gate import Gate, export_booster
 from decide.net import np_forward, np_forward_typed, np_forward_typed_ens, stack
 from decide.torchnet import export
@@ -32,7 +32,12 @@ torch.set_num_threads(4)
 sig = lambda z: 1 / (1 + np.exp(-z))
 logit = lambda p: np.log(np.clip(p, 1e-4, 1 - 1e-4) / (1 - np.clip(p, 1e-4, 1 - 1e-4)))
 softmax = lambda z: np.exp(z - z.max(1, keepdims=True)) / np.exp(z - z.max(1, keepdims=True)).sum(1, keepdims=True)
-COVERAGE = 0.835          # declared coverage; target is 0.80 so keep margin for test-set noise
+COVERAGE = 0.835          # route: its errors are random label noise, so abstaining more removes few of
+                          # them, and on perturbed text 82% fell below 80% - keep the wider margin
+APPROVE_COVERAGE = 0.835  # measured on out-of-fold data with selfcheck's own cost_score: approve quality
+                          # peaks near 83.5% (abstaining also removes approvals, which lowers the
+                          # always-hold reference cost the score is measured against)
+APPROVE_TIEBREAK = 1e-3   # p_true = isotonic + 1e-3 x (Platt - 0.5): orders cases inside an isotonic step
 GROUNDED_COVERAGE = 0.88  # grounded is ~99.5% accurate on clean text; answer more so that coverage
                           # stays above 80% when wording drifts (perturbed sets)
 APPROVE_TH = 0.75         # cost 3:1 -> approve iff p > 3/(3+1)
@@ -43,18 +48,36 @@ CFG = dict(epochs=15, dim=128, p=0.5, wd=0.1, wide_wd=0.02, ls=0.1, tok_drop=0.2
 TEXT_NS = ("p:", "b:", "d:", "pflag:", "s:")
 
 
-def gbm_feats(states, te, dis=None):
-    """Gate inputs: tier, amount, text evidence [, ensemble disagreement on the evidence]."""
+def gbm_feats(states, te, cue, dis=None):
+    """Gate inputs: tier, amount, text evidence, hold-cue similarity, always-hold-request similarity
+    [, ensemble disagreement on the evidence]. The cue inputs let the gate learn 'cue -> hold' from
+    every ticket, not only where the amount cap is not binding."""
     ta = [tier_amount(s) for s in states]
+    cue = np.asarray(cue, dtype=np.float64).reshape(len(states), -1)
     X = np.array([[t, a, e] for (t, a), e in zip(ta, te)], dtype=np.float64)
+    X = np.hstack([X, cue])
     return X if dis is None else np.hstack([X, np.asarray(dis, dtype=np.float64)[:, None]])
 
 
 def fit_gbm(X, y, seed=0):
-    mono = [0, -1, 1] + [0] * (X.shape[1] - 3)
+    mono = [0, -1, 1, -1, -1] + [0] * (X.shape[1] - 5)       # more amount / cue similarity never raises p
     return lgb.LGBMClassifier(n_estimators=200, learning_rate=0.03, num_leaves=8, min_child_samples=30,
                               subsample=0.8, subsample_freq=1, colsample_bytree=1.0, reg_lambda=5.0,
                               monotone_constraints=mono, random_state=seed, verbose=-1).fit(X, y)
+
+
+def approve_meta_feats(p, states, O, caps):
+    """Confidence meta-model inputs: base p, distance to the tier cap, cue strength, disagreement."""
+    ta = [tier_amount(s) for s in states]
+    ratio = np.array([a / caps[t] for t, a in ta])
+    cue = np.asarray(O["cue"]).reshape(len(states), -1)
+    return np.column_stack([logit(p), np.log1p(ratio), (ratio == 0).astype(float), cue, np.abs(O["A0"] - O["A1"])])
+
+
+def approve_meta_apply(meta, p, states, O, caps):
+    """p_true = p(correct) when the base decision is yes, 1 - p(correct) when it is no."""
+    pc = sig(approve_meta_feats(p, states, O, caps) @ np.asarray(meta[0]) + meta[1])
+    return np.where(p > 0.5, pc, 1 - pc)
 
 
 def route_conf_feats(P, P0, P1, pflag):
@@ -83,8 +106,9 @@ def rescale_top(P, pc):
 class Calib:
     """Everything that turns raw head outputs into served probabilities and abstain flags."""
 
-    def __init__(self, T, g_ab, gbm, approve_cal, thr, bias=None, conf=None, gate_dis=False):
+    def __init__(self, T, g_ab, gbm, approve_cal, thr, bias=None, conf=None, gate_dis=False, ameta=None, caps=None):
         self.T, self.g_ab, self.gbm, self.ac, self.thr = T, g_ab, gbm, approve_cal, thr
+        self.ameta, self.caps = ameta, caps
         self.bias = np.zeros(5) if bias is None else np.asarray(bias)
         self.conf, self.gate_dis = conf, gate_dis          # conf: (coef, intercept) of route p(correct)
 
@@ -100,29 +124,48 @@ class Calib:
         ac = self.ac
         pi = np.interp(gate_p, ac["iso_x"], ac["iso_y"])
         pp = sig(ac["platt"][0] * logit(gate_p) + ac["platt"][1])
-        return {"iso": pi, "platt": pp, "blend": 0.5 * (pi + pp)}[ac["kind"]]
+        out = {"iso": pi, "platt": pp, "blend": 0.5 * (pi + pp)}[ac["kind"]]
+        return np.clip(out + APPROVE_TIEBREAK * (pp - 0.5), 0.0, 1.0) if ac["kind"] == "iso" else out
 
     def approve_rank(self, gate_p):
-        """Tie-free version of p (Platt on the gate) used only to RANK cases for the abstain flag:
-        isotonic steps put hundreds of cases on one value, which a threshold cannot split."""
-        return approve_cost(sig(self.ac["platt"][0] * logit(gate_p) + self.ac["platt"][1]))
+        """Uncertainty used to RANK cases for the abstain flag: closeness of the tie-free (Platt) p to
+        0.5. Out-of-fold this beat ranking by expected cost min(3(1-p), p) on selfcheck's quality."""
+        return approve_uncertainty(sig(self.ac["platt"][0] * logit(gate_p) + self.ac["platt"][1]))
 
     def probs(self, O, states):
         """O: dict of ensemble outputs (R, A, G means; R0/R1/A0/A1 two independent members; pflag)."""
         Pr = self.route_p(O["R"], O["R0"], O["R1"], O["pflag"])
         Pg = sig(self.g_ab[0] * O["G"] + self.g_ab[1])
-        Ga = self.gbm.predict_proba(gbm_feats(states, O["A"], np.abs(O["A0"] - O["A1"]) if self.gate_dis else None))[:, 1]
-        return Pr, self.approve_p(Ga), Pg, Ga
+        Ga = self.gbm.predict_proba(gbm_feats(states, O["A"], O["cue"], np.abs(O["A0"] - O["A1"]) if self.gate_dis else None))[:, 1]
+        Pa = self.approve_p(Ga)
+        if self.ameta is not None:
+            Pa = approve_meta_apply(self.ameta, Pa, states, O, self.caps)
+        return Pr, Pa, Pg, Ga
 
-    def abstain(self, Pr, Ga, Pg):
+    def abstain(self, Pr, Ga, Pg, Pa=None):
+        rank = approve_cost(Pa) if (self.ameta is not None and Pa is not None) else self.approve_rank(Ga)
         return {"route": Pr.max(1) < self.thr["route"],
                 "grounded": np.maximum(Pg, 1 - Pg) < self.thr["grounded"],
-                "approve": self.approve_rank(Ga) > self.thr["approve"]}
+                "approve": rank > self.thr["approve"]}
+
+
+def approve_uncertainty(p):
+    return 0.5 - np.abs(np.asarray(p) - 0.5)
 
 
 def approve_cost(p):
     """Expected cost of the action taken at the 0.75 threshold (hold costs p, approve costs 3(1-p))."""
     return np.minimum(3 * (1 - p), p)
+
+
+def mine_scope_rules(rows, min_n=15, max_rate=0.05):
+    """(article scope, draft scope) pairs that are (almost) never grounded in the training labels."""
+    from collections import defaultdict
+    st = defaultdict(list)
+    for r in rows:
+        for pair in pairfeats.scope_pairs(r["state"].get("draft_reply") or "", r["state"].get("kb_article") or ""):
+            st[pair].append(r["labels"]["grounded"])
+    return [p for p, v in st.items() if len(v) >= min_n and np.mean(v) <= max_rate]
 
 
 def mine_cues(rows, safe, min_n=15, max_rate=0.05):
@@ -157,13 +200,13 @@ def labels(rows):
 def score(cal, O, rows):
     Pr, Pa, Pg, Ga = cal.probs(O, [r["state"] for r in rows])
     yr, ya, yg = labels(rows)
-    return report("x", Pr, Pa, Pg, yr, ya, yg, cal.abstain(Pr, Ga, Pg))
+    return report("x", Pr, Pa, Pg, yr, ya, yg, cal.abstain(Pr, Ga, Pg, Pa))
 
 
 def ens_outputs(nets, items, pflag_id, i0, i1):
     """Served-style ensemble outputs, plus two independent members (i0, i1) for disagreement."""
     S = stack(nets)
-    O = {k: [] for k in ("R", "A", "G", "R0", "R1", "A0", "A1", "pflag")}
+    O = {k: [] for k in ("R", "A", "G", "R0", "R1", "A0", "A1", "pflag", "cue")}
     for ids, w, x in items:
         r = np_forward_typed_ens(S, ids, w, x, 0, members=True)
         a = np_forward_typed_ens(S, ids, w, x, 1, members=True)
@@ -171,6 +214,7 @@ def ens_outputs(nets, items, pflag_id, i0, i1):
         O["A"].append(a.mean()); O["A0"].append(a[i0]); O["A1"].append(a[i1])
         O["G"].append(np_forward_typed_ens(S, ids, w, x, 2))
         O["pflag"].append(float(pflag_id in set(ids.tolist())))
+        O["cue"].append(x[O_CUE:O_CUE + N_CUE])
     return {k: np.array(v) for k, v in O.items()}
 
 
@@ -248,10 +292,11 @@ def main():
     print("caps(p90 of approved amount per tier):", [round(c, 1) for c in caps], "safe frac %.2f" % amask.mean())
 
     # learned side-issue opener detector + mined cue banks (training rows only)
-    for fn in ("side_opener.json", "cue_bank.npz"):
+    for fn in ("side_opener.json", "cue_bank.npz", "scope_rules.json"):
         if os.path.exists(os.path.join(args.out, fn)):
             os.remove(os.path.join(args.out, fn))
     features.SIDE = features.CUES = None
+    pairfeats.SCOPE_RULES = set()
     if features.M2V is not None and not args.no_v6:
         from decide.roles import SideOpener
         features.SIDE = SideOpener.fit(features.M2V)
@@ -260,6 +305,10 @@ def main():
         np.savez_compressed(os.path.join(args.out, "cue_bank.npz"), **bank)
         features.CUES = bank
         print("cue banks: %d hold sentences, %d always-hold requests" % (len(bank["hold"]), len(bank["flag"])))
+        rules = mine_scope_rules(fit_rows)
+        json.dump(sorted(rules), open(os.path.join(args.out, "scope_rules.json"), "w"))
+        pairfeats.SCOPE_RULES = set(rules)
+        print("scope rules (draft scope never grounded for that article scope): %s" % sorted(rules))
 
     arng = random.Random(99)
     pools = build_pools(fit_rows)                 # training rows only (holdout / dev never contribute)
@@ -304,7 +353,8 @@ def main():
     j1 = 1 if args.repeats > 1 else 0
     pflag = np.array([float(pflag_id in set(it[0].tolist())) for it in items])
     O = {"R": np.mean([o[0] for o in oof], 0), "A": np.mean([o[1] for o in oof], 0), "G": np.mean([o[2] for o in oof], 0),
-         "R0": oof[0][0], "R1": oof[j1][0], "A0": oof[0][1], "A1": oof[j1][1], "pflag": pflag}
+         "R0": oof[0][0], "R1": oof[j1][0], "A0": oof[0][1], "A1": oof[j1][1], "pflag": pflag,
+         "cue": np.array([it[2][O_CUE:O_CUE + N_CUE] for it in items])}
 
     # numpy serving path must reproduce torch
     sd = nets[-1]
@@ -374,7 +424,7 @@ def main():
     dis_a = np.abs(O["A0"] - O["A1"])
     best = None
     for gate_dis in ((False, True) if args.repeats > 1 else (False,)):
-        Xa = gbm_feats(states, O["A"], dis_a if gate_dis else None)
+        Xa = gbm_feats(states, O["A"], O["cue"], dis_a if gate_dis else None)
         inner = np.zeros(n)
         for a, b in StratifiedKFold(5, shuffle=True, random_state=1).split(Xa, ya):
             inner[b] = fit_gbm(Xa[a], ya[a]).predict_proba(Xa[b])[:, 1]
@@ -385,32 +435,54 @@ def main():
             cross["iso"][b] = iso_k.predict(inner[b])
             cross["platt"][b] = pl_k.predict_proba(logit(inner[b])[:, None])[:, 1]
             cross["blend"][b] = 0.5 * (cross["iso"][b] + cross["platt"][b])
-        rank = approve_cost(cross["platt"])
+        rank = approve_uncertainty(cross["platt"])
         for kind in ("iso", "platt", "blend"):
             r = report("oof", None, cross[kind], None, None, ya.astype(bool), None,
-                       {"approve": rank > np.quantile(rank, COVERAGE)})
+                       {"approve": rank > np.quantile(rank, APPROVE_COVERAGE)})
             obj = r["score_no_latency"]["total_with_full_latency"]
             ra = r["approve"]
             print("approve gate%s calibrator %-5s score %.3f | ece %.4f bskill %.4f risk@80 %.4f cost %.4f" % (
                 "+disagreement" if gate_dis else "             ", kind, obj, ra["ece"], ra["bskill"], ra["risk"], ra["cost"]))
             if best is None or obj > best[0]:
-                best = (obj, kind, gate_dis, inner, Xa)
-    _, kind, gate_dis, inner, Xa = best
+                best = (obj, kind, gate_dis, inner, Xa, cross[kind])
+    best_obj, kind, gate_dis, inner, Xa, base_cv = best
+
+    # approve confidence meta-model (p(correct) from base p, distance to cap, cue strength, disagreement),
+    # scored on cross-fitted predictions against the plain calibrator
+    ameta = None
+    Ometa = dict(O)
+    if args.repeats > 1:
+        Pm = np.zeros(n)
+        Fm = approve_meta_feats(base_cv, states, Ometa, caps)
+        corr = ((base_cv > 0.5) == ya.astype(bool)).astype(int)
+        for a, b in StratifiedKFold(5, shuffle=True, random_state=4).split(Fm, corr):
+            lr = LogisticRegression(C=1.0, max_iter=3000).fit(Fm[a], corr[a])
+            pc = lr.predict_proba(Fm[b])[:, 1]
+            Pm[b] = np.where(base_cv[b] > 0.5, pc, 1 - pc)
+        r = report("oof", None, Pm, None, None, ya.astype(bool), None,
+                   {"approve": approve_cost(Pm) > np.quantile(approve_cost(Pm), APPROVE_COVERAGE)})
+        obj_m, ra = r["score_no_latency"]["total_with_full_latency"], r["approve"]
+        print("approve meta-model p(correct)          score %.3f | ece %.4f bskill %.4f risk@80 %.4f cost %.4f  (plain: %.3f)" % (
+            obj_m, ra["ece"], ra["bskill"], ra["risk"], ra["cost"], best_obj))
+        if obj_m > best_obj:
+            lr = LogisticRegression(C=1.0, max_iter=3000).fit(Fm, corr)
+            ameta = (lr.coef_[0].tolist(), float(lr.intercept_[0]))
     iso = IsotonicRegression(out_of_bounds="clip", y_min=0.001, y_max=0.999).fit(inner, ya)
     pl = LogisticRegression(C=1e4).fit(logit(inner)[:, None], ya)
     gbm = fit_gbm(Xa, ya)
     ac = {"iso_x": iso.X_thresholds_.tolist(), "iso_y": iso.y_thresholds_.tolist(),
           "platt": (float(pl.coef_[0, 0]), float(pl.intercept_[0])), "kind": kind}
-    print("approve chosen: calibrator %s, disagreement input %s" % (kind, gate_dis))
+    print("approve chosen: calibrator %s, disagreement input %s, meta-model %s" % (kind, gate_dis, ameta is not None))
 
-    cal = Calib(T_route, g_ab, gbm, ac, None, bias=bias, conf=conf, gate_dis=gate_dis)
+    cal = Calib(T_route, g_ab, gbm, ac, None, bias=bias, conf=conf, gate_dis=gate_dis, ameta=ameta, caps=caps)
     oR = cal.route_p(O["R"], O["R0"], O["R1"], pflag)
     oG = sig(g_ab[0] * O["G"] + g_ab[1]); oGa = sig(g_ab[0] * oofG_aug + g_ab[1])
     cal.thr = {"route": float(np.quantile(oR.max(1), 1 - COVERAGE)),
                # grounded: clean + perturbed OOF, so coverage does not collapse when wording drifts
                "grounded": float(np.quantile(np.maximum(oG, 1 - oG) if not args.aug else np.concatenate(
                    [np.maximum(oG, 1 - oG), np.maximum(oGa, 1 - oGa)]), 1 - GROUNDED_COVERAGE)),
-               "approve": float(np.quantile(cal.approve_rank(inner), COVERAGE))}
+               "approve": float(np.quantile(approve_cost(approve_meta_apply(ameta, cal.approve_p(inner), states, O, caps))
+                                            if ameta else cal.approve_rank(inner), APPROVE_COVERAGE))}
     print("T_route %.3f  bias %s  grounded platt %s  abstain %s" % (T_route, np.round(bias, 3), g_ab, cal.thr))
 
     # ---- repeated-CV estimate: score each repeat's out-of-fold predictions separately --------
@@ -435,6 +507,7 @@ def main():
     i0, i1 = 0, (args.folds if args.repeats > 1 else 0)
     json.dump({"T_route": T_route, "route_bias": bias.tolist(), "route_conf": conf, "grounded_platt": g_ab,
                "abstain": cal.thr, "approve_threshold": APPROVE_TH, "approve_gate_disagreement": gate_dis,
+               "approve_meta": ameta, "approve_tiebreak": APPROVE_TIEBREAK, "approve_rank": "uncertainty", "gate_inputs": ["tier", "amount", "evidence", "cue_hold", "cue_flag"] + (["disagreement"] if gate_dis else []),
                "disagree_members": [i0, i1], "n_nets": len(nets), "caps": caps, "arch": args.arch, "approve_cal": ac,
                "h_buckets": H_BUCKETS, "m2v": not args.no_m2v, "spell": not args.no_spell,
                "approve_iso": {"x": ac["iso_x"], "y": ac["iso_y"]}},

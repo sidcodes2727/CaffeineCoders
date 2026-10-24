@@ -34,7 +34,7 @@ import numpy as np
 
 from decide import features
 from decide.encode import encode
-from decide.features import tier_amount
+from decide.features import N_CUE, O_CUE, tier_amount
 from decide.gate import Gate
 from decide.net import Q_APPROVE, Q_GROUNDED, Q_ROUTE, np_forward, np_forward_typed_ens, stack
 
@@ -72,6 +72,11 @@ class DecisionModel:
         self.route_bias = np.asarray(cal.get("route_bias") or [0.0] * 5)
         self.route_conf = cal.get("route_conf")                       # (coef, intercept) or None
         self.gate_dis = bool(cal.get("approve_gate_disagreement", False))
+        self.gate_cues = "cue_hold" in cal.get("gate_inputs", [])
+        self.ameta = cal.get("approve_meta")
+        self.tiebreak = float(cal.get("approve_tiebreak", 0.0))
+        self.approve_rank_kind = cal.get("approve_rank", "expected_cost")
+        self.caps = cal.get("caps", [1.0, 1.0, 1.0])
         self.i0, self.i1 = cal.get("disagree_members", [0, 0])
         self.pflag_id = self.vocab.get("pflag:1", -1)
         self.g_a, self.g_b = cal["grounded_platt"]
@@ -177,21 +182,35 @@ class DecisionModel:
     def approve(self, state: Dict[str, Any]) -> Tuple[bool, float, bool]:
         try:
             t, amt = tier_amount(state)
-            if self.gate_dis:
-                am, _ = self._members(state, Q_APPROVE)
-                gp = self.gate.prob([float(t), amt, float(am.mean()), float(abs(am[self.i0] - am[self.i1]))])
-            else:
-                gp = self.gate.prob([float(t), amt, float(self._answer(state, Q_APPROVE))])
+            ids, w, x = encode(state, self.vocab)
+            am = np_forward_typed_ens(self.stacked, ids, w, x, Q_APPROVE, members=True)
+            ev, dis = float(am.mean()), float(abs(am[self.i0] - am[self.i1]))
+            cue = [float(v) for v in x[O_CUE:O_CUE + N_CUE]] if self.gate_cues else []
+            gp = self.gate.prob([float(t), amt, ev] + cue + ([dis] if self.gate_dis else []))
             p = self._approve_p(gp)
+            if self.ameta is not None:
+                # confidence meta-model: p(correct) of the base call from base p, distance to the cap,
+                # cue strength and ensemble disagreement; p_true = p(correct) if yes else 1 - p(correct)
+                ratio = amt / self.caps[t]
+                lg = float(np.log(min(max(p, 1e-4), 1 - 1e-4) / (1 - min(max(p, 1e-4), 1 - 1e-4))))
+                f = np.array([lg, np.log1p(ratio), float(ratio == 0)] + cue + [dis])
+                pc = _sig(float(f @ np.asarray(self.ameta[0]) + self.ameta[1]))
+                p = pc if p > 0.5 else 1.0 - pc
+                pr = p
+            else:
+                g = min(max(gp, 1e-4), 1 - 1e-4)
+                pr = _sig(self.pl_a * np.log(g / (1 - g)) + self.pl_b)   # tie-free (Platt) view
+                if self.ac_kind == "iso":
+                    p = min(max(p + self.tiebreak * (pr - 0.5), 0.0), 1.0)  # order cases inside an isotonic step
             if not np.isfinite(p):
                 raise ValueError("non-finite approve probability")
             # A wrong approval costs 3x a wrong hold, so approve only when p > 3/(3+1).
-            # Abstain on the highest expected cost of the action taken, ranked on the tie-free
-            # Platt view of the gate (isotonic steps would tie hundreds of cases).
-            g = min(max(gp, 1e-4), 1 - 1e-4)
-            pr = _sig(self.pl_a * np.log(g / (1 - g)) + self.pl_b)
-            exp_cost = min(3.0 * (1.0 - pr), pr)
-            return p > self.approve_th, p, bool(exp_cost > self.thr["approve"])
+            # Abstain on the most uncertain cases (tie-free p closest to 0.5) - chosen out-of-fold.
+            if self.approve_rank_kind == "uncertainty":
+                unsure = 0.5 - abs(pr - 0.5)
+            else:
+                unsure = min(3.0 * (1.0 - pr), pr)
+            return p > self.approve_th, p, bool(unsure > self.thr["approve"])
         except Exception:
             return False, 0.4, True
 
