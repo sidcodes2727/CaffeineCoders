@@ -81,13 +81,26 @@ def split_decoys(body: str):
     return re.sub(r"\s+", " ", " ".join(kept)).strip(), " ".join(decoys).strip()
 
 
-def segments(subject: str, body: str):
+def segments(subject: str, body: str, side_fn=None):
     """(primary, subject, content, decoys). primary falls back to the decoy-free content when no
-    marker is present; content = non-boilerplate sentences (decoys included)."""
+    marker is present; content = non-boilerplate sentences (decoys included).
+    side_fn(opening_clause) -> bool is an optional learned detector (decide/roles.py) for side-issue
+    openers the keyword rules do not know; it is consulted only when there is no primary marker."""
     prim = primary_text(body)
     no_decoy, decoys = split_decoys(body)
     sents = [s for s in _SENT.split(body) if s.strip()]
     content = " ".join(s for s in sents if not BOILER.match(s.strip()))
+    if not prim and side_fn is not None:
+        from .roles import opening_clause
+        keep, extra = [], []
+        for s in _SENT.split(no_decoy):
+            if not s.strip():
+                continue
+            oc = opening_clause(s)
+            (extra if (oc and not BOILER.match(s.strip()) and side_fn(oc)) else keep).append(s)
+        if extra and any(k.strip() and not BOILER.match(k.strip()) for k in keep):
+            no_decoy = " ".join(keep)
+            decoys = (decoys + " " + " ".join(extra)).strip()
     if not prim and decoys:
         prim = " ".join(s for s in _SENT.split(no_decoy) if s.strip() and not BOILER.match(s.strip()))
     return prim, subject, content, decoys

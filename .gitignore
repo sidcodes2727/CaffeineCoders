@@ -12,3 +12,6 @@ data/*.jsonl
 # (the limit is 500MB total). If they are too large for your git host, say in
 # the README exactly how to fetch or rebuild them - a service that cannot be
 # started cannot be scored.
+
+# out-of-fold analysis dump written by train.py (not needed to serve)
+artifacts/oof.npz

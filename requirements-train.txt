@@ -7,3 +7,6 @@ scipy>=1.10
 lightgbm>=4.0
 # only for tools/export_m2v.py (the exported table is already committed in artifacts/)
 model2vec>=0.7
+# only for tools/train_nli.py / fit_cascade.py (the exported cross-encoder is committed in artifacts/nli/)
+transformers>=4.44,<4.50
+onnx>=1.15

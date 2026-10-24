@@ -12,6 +12,8 @@ Dense vector:
   [5:12]   draft/article soft alignment through pretrained word vectors (synonym-tolerant)
   [12:268] pretrained sentence embedding (Model2Vec potion-base-8M) of the primary request
   [268:524] the same embedding of the rest of the body (history / context sentences)
+  [524:526] cue similarity: max cosine of any body sentence to the mined hold-cue bank, and of the
+            request to the mined always-hold-request bank (paraphrase-tolerant approve evidence)
 """
 import re
 import zlib
@@ -30,7 +32,9 @@ M2V_DIM = 256
 O_SOFT = N_PAIR
 O_INTENT = N_PAIR + N_SOFT
 O_REST = O_INTENT + M2V_DIM
-N_NUM = O_REST + M2V_DIM
+O_CUE = O_REST + M2V_DIM
+N_CUE = 2
+N_NUM = O_CUE + N_CUE
 H_BUCKETS = 8192                 # hashed char n-gram rows appended after the vocabulary
 
 _WORD = re.compile(r"[a-z0-9']+")
@@ -43,16 +47,34 @@ thank please sorry hope helps help just also me my us am was were been being do 
 shall let know here what which who how when if but""".split())
 
 M2V = None                       # decide.m2v.M2V instance, set by init()
+SIDE = None                      # decide.roles.SideOpener, learned side-issue opener detector
+CUES = None                      # {"hold": (k,256), "flag": (k,256)} mined cue banks
 
 
 def init(artifacts_dir: str, speller: bool = True) -> None:
-    """Load the pretrained embedding and the spell-correction vocabulary from artifacts/."""
-    global M2V
+    """Load the pretrained embedding, spell vocabulary, side-opener detector and cue banks."""
+    global M2V, SIDE, CUES
+    import os
     from .m2v import M2V as _M2V
+    from .roles import SideOpener
     M2V = _M2V(artifacts_dir)
     if speller:
         protected = {w for w in M2V.vocab if w.isalpha()}
         textnorm.set_speller(textnorm.load_speller(artifacts_dir, protected))
+    SIDE = SideOpener.load(os.path.join(artifacts_dir, "side_opener.json"), M2V)
+    p = os.path.join(artifacts_dir, "cue_bank.npz")
+    CUES = {k: v.astype(np.float32) for k, v in np.load(p).items()} if os.path.exists(p) else None
+
+
+def cue_sims(intent: str, sentences: List[str]) -> List[float]:
+    if CUES is None or M2V is None:
+        return [0.0, 0.0]
+    hold = 0.0
+    if sentences and len(CUES["hold"]):
+        S = np.stack([M2V.encode(x) for x in sentences])
+        hold = float((S @ CUES["hold"].T).max())
+    flag = float((CUES["flag"] @ M2V.encode(intent)).max()) if len(CUES["flag"]) and intent else 0.0
+    return [hold, flag]
 
 
 def parse_amount(v) -> float:
@@ -144,7 +166,7 @@ def featurize(state: Dict) -> Tuple[List[str], List[int], np.ndarray]:
     body = textnorm.clean(state.get("body"))
     draft = textnorm.clean(state.get("draft_reply"))
     kb = textnorm.clean(state.get("kb_article"))
-    prim, _, content, decoys = segments(subject, body)
+    prim, _, content, decoys = segments(subject, body, side_fn=SIDE)
     intent = prim or content
     iw = _words(intent)
     toks = ["p:" + t for t in _ngrams(iw)]
@@ -166,4 +188,5 @@ def featurize(state: Dict) -> Tuple[List[str], List[int], np.ndarray]:
         x[O_INTENT:O_INTENT + M2V_DIM] = M2V.encode(intent)
         rest = " ".join(s for s in sents if s not in intent)
         x[O_REST:O_REST + M2V_DIM] = M2V.encode(rest)
+        x[O_CUE:O_CUE + N_CUE] = cue_sims(intent, [s for s in sents if s not in intent])
     return toks, hashed, x

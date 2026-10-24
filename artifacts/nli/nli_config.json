@@ -1,0 +1,1 @@
+{"base_model": "cross-encoder/nli-MiniLM2-L6-H768", "max_len": 192, "holdout": 0.15, "inputs": ["input_ids", "attention_mask"], "epochs": 1, "lr": 2e-05}

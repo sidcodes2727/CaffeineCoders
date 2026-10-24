@@ -23,6 +23,15 @@ TRAIN_SYNONYMS = [
     ("email", "e-mail"), ("tracking", "shipment status"), ("stuck", "frozen"), ("locked out", "shut out"),
     ("subscription", "membership"), ("damaged", "broken in transit"), ("reset", "renew"), ("fails", "errors out"),
 ]
+# fact-word paraphrases for drafts (meaning preserved, so the label is too); used to fine-tune the
+# grounding cross-encoder. Disjoint from tests/perturb.py TEST_SYNONYMS (sources and targets).
+TRAIN_FACT_SYNONYMS = [
+    ("photographs", "photos"), ("warranty", "guarantee"), ("repair", "fix"), ("administrators", "admins"),
+    ("seats", "licences"), ("notice", "advance warning"), ("dispatched", "shipped"), ("dispatch", "ship"),
+    ("valid", "good"), ("immediately", "straight away"), ("prorated", "pro-rata"), ("in-app", "in the app"),
+    ("proof of purchase", "purchase receipt"), ("expires", "runs out"), ("requests per minute", "calls per minute"),
+    ("export", "data export"), ("concurrent", "parallel"), ("lockout", "lock"),
+]
 DRAFT_SYNONYMS = [("within", "inside"), ("immediately", "right away"), ("covers", "applies to"),
                   ("available", "open"), ("approved", "accepted")]
 TRAIN_FILLERS = ["Thank you in advance for looking at this.", "Have a great day.", "Apologies if this is a duplicate.",

@@ -69,6 +69,11 @@ class DecisionModel:
         self.stacked = stack(self.nets) if self.arch == "typed" else None
         self.gate = Gate(json.load(open(j("approve_gate.json"))))
         self.T_route = cal["T_route"]
+        self.route_bias = np.asarray(cal.get("route_bias") or [0.0] * 5)
+        self.route_conf = cal.get("route_conf")                       # (coef, intercept) or None
+        self.gate_dis = bool(cal.get("approve_gate_disagreement", False))
+        self.i0, self.i1 = cal.get("disagree_members", [0, 0])
+        self.pflag_id = self.vocab.get("pflag:1", -1)
         self.g_a, self.g_b = cal["grounded_platt"]
         ac = cal.get("approve_cal") or {"iso_x": cal["approve_iso"]["x"], "iso_y": cal["approve_iso"]["y"],
                                         "platt": (1.0, 0.0), "kind": "iso"}
@@ -77,7 +82,37 @@ class DecisionModel:
         self.pl_a, self.pl_b = ac["platt"]
         self.thr = cal["abstain"]
         self.approve_th = cal["approve_threshold"]
+        # grounded cascade: fine-tuned NLI cross-encoder consulted on hard cases (DECIDE_NO_CASCADE=1 disables)
+        self.cascade = None
+        nli_dir = j("nli")
+        if os.environ.get("DECIDE_NO_CASCADE") != "1" and os.path.exists(os.path.join(nli_dir, "cascade.json")):
+            from decide import nli
+            from decide.cascade import Cascade
+            enc = nli.load(nli_dir)
+            if enc is not None and self._fast_enough(enc):
+                self.cascade = Cascade(json.load(open(os.path.join(nli_dir, "cascade.json"))), enc)
         self._warm()
+
+    @staticmethod
+    def _fast_enough(enc, budget_ms: float = 55.0) -> bool:
+        """Latency guard: time the cross-encoder on THIS machine at startup. Latency is scored as the
+        mean of per-decision p95, so a grounded p95 under ~55 ms keeps the mean well inside full marks;
+        on a CPU slow enough to break that, the cascade switches off and grounded uses the network."""
+        import time
+        kb = ("Refunds may be requested within fourteen days of the charge, and this applies to all paid plans. "
+              "Claims are reviewed within 5 days. Approved refunds are returned to the card on file.")
+        draft = "You are inside the two weeks window, so I have put the refund through to the card on file."
+        try:
+            for _ in range(3):
+                enc.logit(kb, draft)
+            ts = []
+            for _ in range(15):
+                t0 = time.perf_counter()
+                enc.logit(kb, draft)
+                ts.append((time.perf_counter() - t0) * 1000.0)
+            return sorted(ts)[int(0.95 * (len(ts) - 1))] * 1.5 < budget_ms    # 1.5x headroom for longer pairs
+        except Exception:
+            return False
 
     def _warm(self) -> None:
         s = {"subject": "warm up", "body": "The part I need you to action is: refund please. $1.",
@@ -95,10 +130,34 @@ class DecisionModel:
         outs = [np_forward(sd, ids, w, x)[q] for sd in self.nets]       # legacy multi-head net
         return sum(outs) / len(outs)
 
+    def _members(self, state: Dict[str, Any], q: int):
+        ids, w, x = encode(state, self.vocab)
+        return np_forward_typed_ens(self.stacked, ids, w, x, q, members=True), ids
+
+    def _route_p(self, state: Dict[str, Any]) -> np.ndarray:
+        if self.arch != "typed" or self.route_conf is None:
+            return _softmax(np.asarray(self._answer(state, Q_ROUTE), dtype=np.float64) / self.T_route + self.route_bias)
+        r, ids = self._members(state, Q_ROUTE)
+        r = r.astype(np.float64)
+        p = _softmax(r.mean(0) / self.T_route + self.route_bias)
+        p0 = _softmax(r[self.i0] / self.T_route + self.route_bias)
+        p1 = _softmax(r[self.i1] / self.T_route + self.route_bias)
+        # p(correct) from top prob, margin, entropy, ensemble disagreement and marker presence
+        srt = np.sort(p)[::-1]
+        lg = lambda v: float(np.log(min(max(v, 1e-4), 1 - 1e-4) / (1 - min(max(v, 1e-4), 1 - 1e-4))))
+        f = np.array([lg(srt[0]), np.log(srt[0] / max(srt[1], 1e-9)), -(p * np.log(np.clip(p, 1e-9, 1))).sum(),
+                      0.5 * np.abs(p0 - p1).sum(), float(self.pflag_id in set(ids.tolist()))])
+        pc = _sig(float(f @ np.asarray(self.route_conf[0]) + self.route_conf[1]))
+        k = int(p.argmax())
+        pc = max(pc, srt[1] / max(1 - srt[0] + srt[1], 1e-9) + 1e-6)          # the top class stays on top
+        q = p * ((1 - pc) / max(1 - p[k], 1e-9))
+        q[k] = pc
+        return q
+
     # -- routing ------------------------------------------------------------
     def route(self, state: Dict[str, Any]) -> Tuple[str, Dict[str, float], float, bool]:
         try:
-            p = _softmax(np.asarray(self._answer(state, Q_ROUTE), dtype=np.float64) / self.T_route)
+            p = self._route_p(state)
             if not np.all(np.isfinite(p)):
                 raise ValueError("non-finite route probabilities")
             k = int(p.argmax())
@@ -117,9 +176,12 @@ class DecisionModel:
 
     def approve(self, state: Dict[str, Any]) -> Tuple[bool, float, bool]:
         try:
-            a = float(self._answer(state, Q_APPROVE))
             t, amt = tier_amount(state)
-            gp = self.gate.prob([float(t), amt, a])
+            if self.gate_dis:
+                am, _ = self._members(state, Q_APPROVE)
+                gp = self.gate.prob([float(t), amt, float(am.mean()), float(abs(am[self.i0] - am[self.i1]))])
+            else:
+                gp = self.gate.prob([float(t), amt, float(self._answer(state, Q_APPROVE))])
             p = self._approve_p(gp)
             if not np.isfinite(p):
                 raise ValueError("non-finite approve probability")
@@ -138,8 +200,15 @@ class DecisionModel:
         try:
             g = float(self._answer(state, Q_GROUNDED))
             p = _sig(self.g_a * g + self.g_b)
+            thr = self.thr["grounded"]
+            if self.cascade is not None:
+                try:
+                    p, _ = self.cascade(state, p)
+                    thr = self.cascade.thr
+                except Exception:
+                    pass                                   # cross-encoder trouble: network answer stands
             if not np.isfinite(p):
                 raise ValueError("non-finite grounded probability")
-            return p > 0.5, p, bool(max(p, 1.0 - p) < self.thr["grounded"])
+            return p > 0.5, p, bool(max(p, 1.0 - p) < thr)
         except Exception:
             return True, 0.6, True

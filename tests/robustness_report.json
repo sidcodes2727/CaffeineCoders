@@ -4,19 +4,19 @@
    "route": {
     "n": 200,
     "flip_rate": 0.01,
-    "mean_abs_dp": 0.023388780925570632,
+    "mean_abs_dp": 0.01966891172878791,
     "pass": true
    },
    "approve": {
     "n": 200,
     "flip_rate": 0.01,
-    "mean_abs_dp": 0.012037492421702132,
+    "mean_abs_dp": 0.009065366184368264,
     "pass": true
    },
    "grounded": {
     "n": 200,
-    "flip_rate": 0.07,
-    "mean_abs_dp": 0.0645972379761632,
+    "flip_rate": 0.035,
+    "mean_abs_dp": 0.045571496807038404,
     "pass": false
    }
   },
@@ -36,7 +36,7 @@
    "grounded": {
     "n": 200,
     "flip_rate": 0.0,
-    "mean_abs_dp": 0.0,
+    "mean_abs_dp": 0.005666795991358833,
     "pass": true
    }
   },
@@ -55,70 +55,70 @@
    },
    "grounded": {
     "n": 200,
-    "flip_rate": 0.0,
-    "mean_abs_dp": 0.0,
+    "flip_rate": 0.015,
+    "mean_abs_dp": 0.007607315783328827,
     "pass": true
    }
   },
   "marker_removed": {
    "route": {
     "n": 42,
-    "flip_rate": 0.047619047619047616,
-    "mean_abs_dp": 0.047212497646916964,
-    "pass": false
+    "flip_rate": 0.023809523809523808,
+    "mean_abs_dp": 0.03182896251711902,
+    "pass": true
    },
    "approve": {
     "n": 42,
-    "flip_rate": 0.0,
-    "mean_abs_dp": 0.0012842210419790523,
+    "flip_rate": 0.023809523809523808,
+    "mean_abs_dp": 0.004493259725423272,
     "pass": true
    }
   },
   "sentences_shuffled": {
    "route": {
-    "n": 171,
+    "n": 165,
     "flip_rate": 0.0,
-    "mean_abs_dp": 0.0030853915618630446,
+    "mean_abs_dp": 0.0014336440648335072,
     "pass": true
    },
    "approve": {
-    "n": 171,
-    "flip_rate": 0.0,
-    "mean_abs_dp": 0.0034570576768719182,
+    "n": 165,
+    "flip_rate": 0.006060606060606061,
+    "mean_abs_dp": 0.0014147280590106849,
     "pass": true
    }
   },
   "filler_added": {
    "route": {
     "n": 200,
-    "flip_rate": 0.005,
-    "mean_abs_dp": 0.00962905746925418,
+    "flip_rate": 0.0,
+    "mean_abs_dp": 0.006468360094315489,
     "pass": true
    },
    "approve": {
     "n": 200,
-    "flip_rate": 0.01,
-    "mean_abs_dp": 0.0020526180249564215,
+    "flip_rate": 0.015,
+    "mean_abs_dp": 0.011410302050547423,
     "pass": true
    },
    "grounded": {
     "n": 200,
-    "flip_rate": 0.035,
-    "mean_abs_dp": 0.06444322656190693,
+    "flip_rate": 0.045,
+    "mean_abs_dp": 0.055650757989962024,
     "pass": false
    }
   },
   "distractor_added": {
    "route": {
     "n": 200,
-    "flip_rate": 0.01,
-    "mean_abs_dp": 0.015805277485327496,
+    "flip_rate": 0.005,
+    "mean_abs_dp": 0.015959487637422606,
     "pass": true
    },
    "approve": {
     "n": 200,
-    "flip_rate": 0.01,
-    "mean_abs_dp": 0.005955092947619356,
+    "flip_rate": 0.0,
+    "mean_abs_dp": 0.0046534844070338435,
     "pass": true
    }
   },
@@ -126,31 +126,31 @@
    "route": {
     "n": 81,
     "flip_rate": 0.0,
-    "mean_abs_dp": 0.007972445952627123,
+    "mean_abs_dp": 0.005131352867349608,
     "pass": true
    },
    "approve": {
     "n": 81,
-    "flip_rate": 0.012345679012345678,
-    "mean_abs_dp": 0.0047815794394451055,
+    "flip_rate": 0.0,
+    "mean_abs_dp": 2.2171596884240562e-05,
     "pass": true
    },
    "grounded": {
     "n": 36,
     "flip_rate": 0.19444444444444445,
-    "mean_abs_dp": 0.19522617329659775,
+    "mean_abs_dp": 0.1889979606960548,
     "pass": false
    }
   },
   "amount_reformatted": {
    "route": {
-    "n": 72,
+    "n": 70,
     "flip_rate": 0.0,
-    "mean_abs_dp": 0.0017995996151009969,
+    "mean_abs_dp": 0.0014099760276874477,
     "pass": true
    },
    "approve": {
-    "n": 72,
+    "n": 70,
     "flip_rate": 0.0,
     "mean_abs_dp": 0.0,
     "pass": true
@@ -171,8 +171,8 @@
    },
    "grounded": {
     "n": 200,
-    "flip_rate": 0.0,
-    "mean_abs_dp": 0.0,
+    "flip_rate": 0.01,
+    "mean_abs_dp": 0.0121799761153409,
     "pass": true
    }
   }
@@ -188,19 +188,19 @@
   },
   "approve: history phrase added (seen wording) -> p drops": {
    "n": 200,
-   "pass_rate": 0.9
+   "pass_rate": 0.945
   },
   "approve: history phrase added (paraphrase) -> p drops": {
    "n": 200,
-   "pass_rate": 0.425
+   "pass_rate": 0.43
   },
   "approve: red-flag request (seen wording) -> p drops": {
    "n": 200,
-   "pass_rate": 0.955
+   "pass_rate": 0.995
   },
   "approve: red-flag request (paraphrase) -> p drops": {
    "n": 200,
-   "pass_rate": 0.35
+   "pass_rate": 0.355
   },
   "grounded: supporting KB sentence deleted -> p drops": {
    "n": 115,
@@ -216,385 +216,385 @@
   },
   "route: core request swapped -> new queue predicted": {
    "n": 200,
-   "pass_rate": 0.595
+   "pass_rate": 0.555
   }
  },
  "slices": {
   "route_by_queue": {
    "billing": {
     "n": 395,
-    "acc": 0.9443037974683545,
-    "ece": 0.057651418610088975
+    "acc": 0.9493670886075949,
+    "ece": 0.025455896044212403
    },
    "technical": {
     "n": 354,
     "acc": 0.923728813559322,
-    "ece": 0.05609424045244297
+    "ece": 0.03848439072664073
    },
    "account": {
     "n": 298,
-    "acc": 0.9261744966442953,
-    "ece": 0.029100808235209052
+    "acc": 0.9228187919463087,
+    "ece": 0.031930787113902674
    },
    "shipping": {
     "n": 233,
-    "acc": 0.9742489270386266,
-    "ece": 0.0436756702170857
+    "acc": 0.9699570815450643,
+    "ece": 0.05450184497418238
    },
    "general": {
     "n": 220,
-    "acc": 0.8363636363636363,
-    "ece": 0.1011693059080647
+    "acc": 0.8318181818181818,
+    "ece": 0.09608971496672447
    }
   },
   "approve_by_tier": {
    "free": {
     "n": 654,
-    "acc": 0.9296636085626911,
-    "macro_f1": 0.9106005135032331,
-    "ece": 0.023827835657800427,
-    "cost": 0.1529051987767584
+    "acc": 0.9373088685015291,
+    "macro_f1": 0.9198843112004804,
+    "ece": 0.023418709194768288,
+    "cost": 0.13302752293577982
    },
    "pro": {
     "n": 594,
-    "acc": 0.8501683501683501,
-    "macro_f1": 0.8496463421224023,
-    "ece": 0.017881865170422957,
-    "cost": 0.3148148148148148
+    "acc": 0.8619528619528619,
+    "macro_f1": 0.8612592288761279,
+    "ece": 0.01405677957081289,
+    "cost": 0.27946127946127947
    },
    "enterprise": {
     "n": 252,
-    "acc": 0.8412698412698413,
-    "macro_f1": 0.8004276550249466,
-    "ece": 0.024847071396494506,
-    "cost": 0.40476190476190477
+    "acc": 0.8452380952380952,
+    "macro_f1": 0.802710027100271,
+    "ece": 0.028935017044410864,
+    "cost": 0.4087301587301587
    }
   },
   "approve_within_10pct_of_cap": {
    "n": 69,
    "acc": 0.5797101449275363,
    "macro_f1": 0.5490196078431373,
-   "ece": 0.1102666311803144,
+   "ece": 0.09380839763373326,
    "cost": 0.4492753623188406
   },
   "grounded_short_kb": {
    "n": 780,
-   "acc": 0.9807692307692307,
-   "macro_f1": 0.9796229372578047,
-   "ece": 0.014670644330713334
+   "acc": 0.9923076923076923,
+   "macro_f1": 0.9918115394305871,
+   "ece": 0.01175264593666333
   },
   "grounded_long_kb": {
    "n": 720,
-   "acc": 0.9861111111111112,
-   "macro_f1": 0.9850948958298831,
-   "ece": 0.01262005683136993
+   "acc": 0.9902777777777778,
+   "macro_f1": 0.9895582778616845,
+   "ece": 0.011189500397061854
   },
   "route_with_marker": {
    "n": 322,
-   "acc": 0.9409937888198758,
-   "ece": 0.02413366498607232
+   "acc": 0.937888198757764,
+   "ece": 0.012890682534887541
   },
   "route_without_marker": {
    "n": 1178,
    "acc": 0.9202037351443124,
-   "ece": 0.029703318330504828
+   "ece": 0.021155442654870973
   },
   "route_body_short_lt10_tokens": {
    "n": 2,
    "acc": 1.0,
-   "ece": 0.09114880109432982
+   "ece": 0.08094130612832162
   },
   "route_body_long_gt60_tokens": {
    "n": 10,
    "acc": 0.9,
-   "ece": 0.08399236678140187
+   "ece": 0.07030889152158454
   }
  },
  "edge_cases": {
   "empty state / route": {
    "ok": true,
    "errors": [],
-   "ms": 1.22
+   "ms": 2.03
   },
   "empty state / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.77
+   "ms": 1.37
   },
   "empty state / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.69
+   "ms": 1.2
   },
   "all null / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.7
+   "ms": 1.25
   },
   "all null / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.75
+   "ms": 1.27
   },
   "all null / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.66
+   "ms": 1.16
   },
   "empty strings / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.67
+   "ms": 1.19
   },
   "empty strings / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.73
+   "ms": 1.26
   },
   "empty strings / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.66
+   "ms": 1.13
   },
   "very long text (12k chars) / route": {
    "ok": true,
    "errors": [],
-   "ms": 18.45
+   "ms": 22.28
   },
   "very long text (12k chars) / approve": {
    "ok": true,
    "errors": [],
-   "ms": 18.76
+   "ms": 19.77
   },
   "very long text (12k chars) / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 18.8
+   "ms": 23.25
   },
   "non-English / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.9
+   "ms": 1.49
   },
   "non-English / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.88
+   "ms": 1.45
   },
   "non-English / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.8
+   "ms": 1.35
   },
   "only emojis / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.68
+   "ms": 1.09
   },
   "only emojis / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.73
+   "ms": 1.15
   },
   "only emojis / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.66
+   "ms": 1.04
   },
   "only numbers / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.73
+   "ms": 1.23
   },
   "only numbers / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.78
+   "ms": 1.21
   },
   "only numbers / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.69
+   "ms": 1.07
   },
   "amount as string '1,200' / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.76
+   "ms": 1.19
   },
   "amount as string '1,200' / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.77
+   "ms": 1.2
   },
   "amount as string '1,200' / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.79
+   "ms": 1.12
   },
   "amount as string '$1.2k' / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.82
+   "ms": 1.16
   },
   "amount as string '$1.2k' / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.86
+   "ms": 1.21
   },
   "amount as string '$1.2k' / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.73
+   "ms": 1.15
   },
   "amount in words / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.76
+   "ms": 1.18
   },
   "amount in words / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.76
+   "ms": 1.2
   },
   "amount in words / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.72
+   "ms": 1.28
   },
   "amount garbage string / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.74
+   "ms": 1.22
   },
   "amount garbage string / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.79
+   "ms": 1.23
   },
   "amount garbage string / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.75
+   "ms": 1.1
   },
   "amount negative / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.71
+   "ms": 1.15
   },
   "amount negative / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.8
+   "ms": 1.26
   },
   "amount negative / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.72
+   "ms": 1.11
   },
   "amount zero / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.74
+   "ms": 1.16
   },
   "amount zero / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.79
+   "ms": 1.23
   },
   "amount zero / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.71
+   "ms": 1.11
   },
   "amount huge / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.75
+   "ms": 1.17
   },
   "amount huge / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.76
+   "ms": 1.2
   },
   "amount huge / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.71
+   "ms": 1.12
   },
   "amount NaN-ish / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.72
+   "ms": 1.17
   },
   "amount NaN-ish / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.78
+   "ms": 1.21
   },
   "amount NaN-ish / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.7
+   "ms": 1.11
   },
   "unknown tier / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.72
+   "ms": 1.13
   },
   "unknown tier / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.76
+   "ms": 1.22
   },
   "unknown tier / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.71
+   "ms": 1.11
   },
   "tier wrong type / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.73
+   "ms": 1.16
   },
   "tier wrong type / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.77
+   "ms": 1.22
   },
   "tier wrong type / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.79
+   "ms": 1.09
   },
   "extra fields / route": {
    "ok": true,
    "errors": [],
-   "ms": 3.33
+   "ms": 3.44
   },
   "extra fields / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.75
+   "ms": 1.16
   },
   "extra fields / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.69
+   "ms": 1.05
   },
   "body wrong type / route": {
    "ok": true,
    "errors": [],
-   "ms": 0.7
+   "ms": 1.12
   },
   "body wrong type / approve": {
    "ok": true,
    "errors": [],
-   "ms": 0.75
+   "ms": 1.21
   },
   "body wrong type / grounded": {
    "ok": true,
    "errors": [],
-   "ms": 0.69
+   "ms": 1.09
   },
   "invalid call: wrong decision name": {
    "ok": true,
@@ -616,28 +616,28 @@
  "latency": {
   "route": {
    "n": 1000,
-   "p50": 2.160312500000927,
-   "p95": 2.4360562499994742,
-   "longest_50_dataset_rows_p95": 2.661377600001913,
-   "synthetic_12k_char_p95": 19.3056190500009
+   "p50": 2.1950005000093142,
+   "p95": 2.704533649989571,
+   "longest_50_dataset_rows_p95": 4.6451623499976336,
+   "synthetic_12k_char_p95": 19.483241649979277
   },
   "approve": {
    "n": 1000,
-   "p50": 2.230729000000764,
-   "p95": 2.520868149998634,
-   "longest_50_dataset_rows_p95": 2.7440046500000648,
-   "synthetic_12k_char_p95": 19.343510100003414
+   "p50": 2.4896045000133427,
+   "p95": 2.8427151999920848,
+   "longest_50_dataset_rows_p95": 2.991026600007274,
+   "synthetic_12k_char_p95": 15.568786900013265
   },
   "grounded": {
    "n": 1000,
-   "p50": 2.1589789999971742,
-   "p95": 2.4329413500005614,
-   "longest_50_dataset_rows_p95": 2.633660299999363,
-   "synthetic_12k_char_p95": 19.20687500000433
+   "p50": 29.380688000003374,
+   "p95": 35.82968750000788,
+   "longest_50_dataset_rows_p95": 38.55171524998724,
+   "synthetic_12k_char_p95": 113.13756424998473
   },
   "deterministic": true
  },
  "cold_start": {
-  "seconds_to_ready": 0.62864089012146
+  "seconds_to_ready": 1.24251389503479
  }
 }
