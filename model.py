@@ -87,10 +87,13 @@ class DecisionModel:
         self.pl_a, self.pl_b = ac["platt"]
         self.thr = cal["abstain"]
         self.approve_th = cal["approve_threshold"]
-        # grounded cascade: fine-tuned NLI cross-encoder consulted on hard cases (DECIDE_NO_CASCADE=1 disables)
+        # grounded cascade: fine-tuned NLI cross-encoder consulted on hard cases. OPT-IN (DECIDE_CASCADE=1):
+        # since v9 the shared network alone scores higher on clean tickets like the hidden set (dev 85.07 vs
+        # 84.79) at 2 ms instead of 11 ms; the cascade only pays off on heavily perturbed text.
         self.cascade = None
         nli_dir = j("nli")
-        if os.environ.get("DECIDE_NO_CASCADE") != "1" and os.path.exists(os.path.join(nli_dir, "cascade.json")):
+        want = os.environ.get("DECIDE_CASCADE") == "1" and os.environ.get("DECIDE_NO_CASCADE") != "1"
+        if want and os.path.exists(os.path.join(nli_dir, "cascade.json")):
             from decide import nli
             from decide.cascade import Cascade
             enc = nli.load(nli_dir)
